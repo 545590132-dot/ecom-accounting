@@ -6,16 +6,22 @@ import { parseExcelFile, downloadPlatformTemplate, exportToExcel } from '@/lib/e
 import { formatCurrency, PLATFORM_CONFIG } from '@/types';
 import type { Platform, RawOrderData, SkuSummary, PlatformSummary, CalculatedOrder } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
   BarChart3, Package, TrendingUp, TrendingDown, DollarSign,
-  ShoppingCart, Info,
+  ShoppingCart, Info, AlertCircle,
 } from 'lucide-react';
 
 // 平台数据导入组件
@@ -83,17 +89,15 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
         )}
       </div>
 
-      {/* 模板格式参考 */}
+      {/* 提示 */}
       <Card className="border-dashed">
         <CardContent className="py-3">
           <div className="flex items-start gap-3">
             <Info className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
             <div className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{config.name} 模板格式参考：</span>
-              {platform === 'shopee' && '订单编号、商品编码、商品名称、商品数量、商品单价、订单金额、佣金、运费'}
-              {platform === 'lazada' && '订单号、卖家SKU、商品名称、数量、单价、订单总金额、平台佣金、运费'}
-              {platform === 'tiktok' && '订单ID、卖家SKU、商品名称、数量、商品单价、订单金额、平台服务费、运费'}
-              <span className="ml-1">—— 点击「下载导入模板」获取标准文件。</span>
+              <span className="font-medium text-foreground">使用说明：</span>
+              请直接上传从 {config.name} 平台导出的订单表格。导入后，系统会自动读取表格的列头字段，
+              你可以在「计算配置」标签页中选择各字段对应的列名。也可点击「下载导入模板」获取参考格式。
             </div>
           </div>
         </CardContent>
@@ -121,7 +125,19 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
                     <div>
                       <div className="font-medium text-sm">{order.fileName}</div>
                       <div className="text-xs text-muted-foreground">
-                        {order.rows.length} 条记录 · {new Date(order.importTime).toLocaleString('zh-CN')}
+                        {order.rows.length} 条记录 · {order.headers.length} 个字段 · {new Date(order.importTime).toLocaleString('zh-CN')}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {order.headers.slice(0, 8).map((h) => (
+                          <Badge key={h} variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+                            {h}
+                          </Badge>
+                        ))}
+                        {order.headers.length > 8 && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
+                            +{order.headers.length - 8}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -143,11 +159,12 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
   );
 }
 
-// 平台计算配置组件
+// 平台计算配置组件 — 核心改动：用下拉选择替代手动输入
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
-  const { calculationConfigs, updateFieldMapping, updateFormula } = useAppStore();
+  const { calculationConfigs, updateFieldMapping, updateFormula, availableHeaders, rawOrders } = useAppStore();
   const config = calculationConfigs[platform];
-  const platformConfig = PLATFORM_CONFIG[platform];
+  const headers = availableHeaders[platform];
+  const hasImportedData = rawOrders[platform].length > 0;
   const [editingFormula, setEditingFormula] = useState(false);
 
   const fieldLabels: Record<string, string> = {
@@ -173,6 +190,21 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
 
   return (
     <div className="space-y-6">
+      {/* 未导入数据提示 */}
+      {!hasImportedData && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="py-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="text-sm text-amber-800">
+                <span className="font-medium">请先导入订单表格</span>
+                <span className="text-amber-700">—— 系统需要从导入的表格中读取列头字段，才能在此配置映射关系。请前往「数据导入」标签页上传表格。</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="text-base flex items-center gap-2">
@@ -180,23 +212,49 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
             字段映射
           </CardTitle>
           <CardDescription>
-            将平台表格的列名映射到系统标准字段。修改后请确保与实际导入的表格列名一致。
+            从导入表格的列头中选择对应的系统字段。系统已自动读取表格中的所有列名，请逐一指定映射关系。
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(fieldLabels).map(([key, label]) => (
-              <div key={key} className="space-y-1.5">
-                <label className="text-sm font-medium">{label}</label>
-                <Input
-                  value={config.fieldMapping[key] ?? ''}
-                  onChange={(e) => updateFieldMapping(platform, key, e.target.value)}
-                  placeholder={`输入对应列名`}
-                  className="h-9"
-                />
+          {headers.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground text-sm">
+              暂无可选字段。请先在「数据导入」标签页上传表格文件。
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {Object.entries(fieldLabels).map(([key, label]) => (
+                <div key={key} className="space-y-1.5">
+                  <label className="text-sm font-medium">{label}</label>
+                  <Select
+                    value={config.fieldMapping[key] || '__none__'}
+                    onValueChange={(value) => updateFieldMapping(platform, key, value === '__none__' ? '' : value)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="选择对应列..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">
+                        <span className="text-muted-foreground">— 不映射 —</span>
+                      </SelectItem>
+                      {headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+          {hasImportedData && headers.length > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="text-xs text-muted-foreground">
+                已检测到 <span className="font-medium text-foreground">{headers.length}</span> 个表格列头字段：
+                <span className="ml-1">{headers.join('、')}</span>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -232,12 +290,12 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                   </span>
                 </div>
                 {editingFormula ? (
-                  <Input
+                  <input
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     value={config.formulas[key as keyof typeof config.formulas] ?? ''}
                     onChange={(e) =>
                       updateFormula(platform, key as keyof typeof config.formulas, e.target.value)
                     }
-                    className="h-9 font-mono text-sm"
                     placeholder="输入计算表达式"
                   />
                 ) : (
@@ -269,7 +327,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
       <div className="py-12 text-center text-muted-foreground">
         <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
         <p>暂无统计数据</p>
-        <p className="text-xs mt-1">请先在「数据导入」标签页导入订单数据</p>
+        <p className="text-xs mt-1">请先在「数据导入」标签页导入订单数据，并在「计算配置」中设置字段映射</p>
       </div>
     );
   }

@@ -13,38 +13,16 @@ import type {
 } from '@/types';
 import { generateId } from '@/types';
 
-// 默认字段映射配置
-const DEFAULT_FIELD_MAPPINGS: Record<Platform, CalculationConfig['fieldMapping']> = {
-  shopee: {
-    orderNo: '订单编号',
-    sku: '商品编码',
-    productName: '商品名称',
-    quantity: '商品数量',
-    unitPrice: '商品单价',
-    totalAmount: '订单金额',
-    platformFee: '佣金',
-    shippingFee: '运费',
-  },
-  lazada: {
-    orderNo: '订单号',
-    sku: '卖家SKU',
-    productName: '商品名称',
-    quantity: '数量',
-    unitPrice: '单价',
-    totalAmount: '订单总金额',
-    platformFee: '平台佣金',
-    shippingFee: '运费',
-  },
-  tiktok: {
-    orderNo: '订单ID',
-    sku: '卖家SKU',
-    productName: '商品名称',
-    quantity: '数量',
-    unitPrice: '商品单价',
-    totalAmount: '订单金额',
-    platformFee: '平台服务费',
-    shippingFee: '运费',
-  },
+// 默认字段映射为空 — 由用户从导入表格的表头中选择
+const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
+  orderNo: '',
+  sku: '',
+  productName: '',
+  quantity: '',
+  unitPrice: '',
+  totalAmount: '',
+  platformFee: '',
+  shippingFee: '',
 };
 
 const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
@@ -61,6 +39,9 @@ interface AppState {
   importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => void;
   clearSkuMappings: () => void;
 
+  // 各平台已导入表格的可用字段（从导入文件的表头自动提取）
+  availableHeaders: Record<Platform, string[]>;
+
   // 计算配置（按平台存储）
   calculationConfigs: Record<Platform, CalculationConfig>;
   updateFieldMapping: (platform: Platform, field: string, value: string) => void;
@@ -76,6 +57,15 @@ interface AppState {
   calculateSummary: (platform: Platform) => PlatformSummary;
   calculateAllSummaries: () => Record<Platform, PlatformSummary>;
   calculateSkuSummaries: (platform: Platform) => SkuSummary[];
+}
+
+// 合并所有已导入文件的表头（去重）
+function mergeHeaders(existing: string[], newHeaders: string[]): string[] {
+  const set = new Set(existing);
+  for (const h of newHeaders) {
+    if (h.trim()) set.add(h.trim());
+  }
+  return Array.from(set);
 }
 
 export const useAppStore = create<AppState>()(
@@ -106,21 +96,24 @@ export const useAppStore = create<AppState>()(
         })),
       clearSkuMappings: () => set({ skuMappings: [] }),
 
-      // 计算配置
+      // 可用表头字段（从导入的表格自动收集）
+      availableHeaders: { shopee: [], lazada: [], tiktok: [] },
+
+      // 计算配置 — 默认字段映射为空，用户从下拉框选择
       calculationConfigs: {
         shopee: {
           platform: 'shopee',
-          fieldMapping: { ...DEFAULT_FIELD_MAPPINGS.shopee },
+          fieldMapping: { ...EMPTY_FIELD_MAPPING },
           formulas: { ...DEFAULT_FORMULAS },
         },
         lazada: {
           platform: 'lazada',
-          fieldMapping: { ...DEFAULT_FIELD_MAPPINGS.lazada },
+          fieldMapping: { ...EMPTY_FIELD_MAPPING },
           formulas: { ...DEFAULT_FORMULAS },
         },
         tiktok: {
           platform: 'tiktok',
-          fieldMapping: { ...DEFAULT_FIELD_MAPPINGS.tiktok },
+          fieldMapping: { ...EMPTY_FIELD_MAPPING },
           formulas: { ...DEFAULT_FORMULAS },
         },
       },
@@ -154,28 +147,55 @@ export const useAppStore = create<AppState>()(
       // 原始订单数据
       rawOrders: { shopee: [], lazada: [], tiktok: [] },
       importOrders: (platform, data) =>
-        set((state) => ({
-          rawOrders: {
-            ...state.rawOrders,
-            [platform]: [
-              ...state.rawOrders[platform],
-              { ...data, id: generateId(), importTime: Date.now() },
-            ],
-          },
-        })),
+        set((state) => {
+          const newHeaders = mergeHeaders(state.availableHeaders[platform], data.headers);
+          return {
+            rawOrders: {
+              ...state.rawOrders,
+              [platform]: [
+                ...state.rawOrders[platform],
+                { ...data, id: generateId(), importTime: Date.now() },
+              ],
+            },
+            availableHeaders: {
+              ...state.availableHeaders,
+              [platform]: newHeaders,
+            },
+          };
+        }),
       deleteOrderFile: (platform, orderId) =>
-        set((state) => ({
-          rawOrders: {
-            ...state.rawOrders,
-            [platform]: state.rawOrders[platform].filter(
-              (o) => o.id !== orderId
-            ),
-          },
-        })),
+        set((state) => {
+          // 重新计算剩余文件的表头
+          const remainingOrders = state.rawOrders[platform].filter(
+            (o) => o.id !== orderId
+          );
+          const rebuiltHeaders: string[] = [];
+          for (const o of remainingOrders) {
+            for (const h of o.headers) {
+              if (h.trim() && !rebuiltHeaders.includes(h.trim())) {
+                rebuiltHeaders.push(h.trim());
+              }
+            }
+          }
+          return {
+            rawOrders: {
+              ...state.rawOrders,
+              [platform]: remainingOrders,
+            },
+            availableHeaders: {
+              ...state.availableHeaders,
+              [platform]: rebuiltHeaders,
+            },
+          };
+        }),
       clearOrders: (platform) =>
         set((state) => ({
           rawOrders: {
             ...state.rawOrders,
+            [platform]: [],
+          },
+          availableHeaders: {
+            ...state.availableHeaders,
             [platform]: [],
           },
         })),
@@ -194,6 +214,7 @@ export const useAppStore = create<AppState>()(
             const mapping = config.fieldMapping;
 
             const getNumValue = (fieldName: string): number => {
+              if (!fieldName) return 0;
               const val = row[fieldName];
               if (val === undefined || val === null || val === '') return 0;
               const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.\-]/g, ''));
@@ -201,6 +222,7 @@ export const useAppStore = create<AppState>()(
             };
 
             const getStrValue = (fieldName: string): string => {
+              if (!fieldName) return '';
               const val = row[fieldName];
               return val !== undefined && val !== null ? String(val) : '';
             };
