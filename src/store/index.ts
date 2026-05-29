@@ -37,6 +37,7 @@ function createDefaultConfig(platform: Platform): SavedCalcConfig {
   return {
     id: generateId(),
     name: '默认方案',
+    shopName: '',
     fieldMapping: { ...EMPTY_FIELD_MAPPING },
     formulas: { ...DEFAULT_FORMULAS },
     createdAt: Date.now(),
@@ -78,6 +79,8 @@ interface AppState {
   deleteConfig: (platform: Platform, configId: string) => void;
   // 重命名配置
   renameConfig: (platform: Platform, configId: string, name: string) => void;
+  // 更新当前激活配置的店铺名称
+  updateConfigShopName: (platform: Platform, shopName: string) => void;
   // 更新当前激活配置的字段映射
   updateFieldMapping: (platform: Platform, field: string, value: string) => void;
   // 更新当前激活配置的计算公式
@@ -198,6 +201,7 @@ export const useAppStore = create<AppState>()(
           const newConfig: SavedCalcConfig = {
             id: generateId(),
             name,
+            shopName: activeConfig?.shopName ?? '',
             fieldMapping: activeConfig ? { ...activeConfig.fieldMapping } : { ...EMPTY_FIELD_MAPPING },
             formulas: activeConfig ? { ...activeConfig.formulas } : { ...DEFAULT_FORMULAS },
             createdAt: Date.now(),
@@ -249,6 +253,19 @@ export const useAppStore = create<AppState>()(
             ),
           },
         })),
+
+      updateConfigShopName: (platform, shopName) =>
+        set((state) => {
+          const activeId = state.activeConfigId[platform];
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: state.savedConfigs[platform].map((c) =>
+                c.id === activeId ? { ...c, shopName, updatedAt: Date.now() } : c
+              ),
+            },
+          };
+        }),
 
       updateFieldMapping: (platform, field, value) =>
         set((state) => {
@@ -375,8 +392,8 @@ export const useAppStore = create<AppState>()(
             const skuInfo = skuMap.find((m) => m.sku === sku);
             const purchasePrice = skuInfo?.purchasePrice ?? 0;
             const productName = skuInfo?.productName ?? '';
-            // 店铺名称：优先使用导入时指定的店铺名称，否则尝试从表格字段读取
-            const shopName = orderFile.shopName || getStrValue(mapping.shopName);
+            // 店铺名称：优先使用计算配置中选择的店铺名称，否则使用导入时指定的店铺名称
+            const shopName = config.shopName || orderFile.shopName || '';
             // 尝试从日期字段中提取年月
             const rawDate = getStrValue(mapping.orderDate);
             let orderDate = '';
@@ -505,6 +522,7 @@ export const useAppStore = create<AppState>()(
             saved[platform] = [{
               id,
               name: '默认方案',
+              shopName: '',
               fieldMapping: { ...cfg.fieldMapping },
               formulas: { ...cfg.formulas },
               createdAt: Date.now(),
@@ -516,9 +534,20 @@ export const useAppStore = create<AppState>()(
           ps.activeConfigId = activeIds;
           delete ps.calculationConfigs;
         }
+        // 为已存在的 savedConfigs 补充 shopName 字段
+        if (ps.savedConfigs) {
+          const saved = ps.savedConfigs as Record<string, SavedCalcConfig[]>;
+          for (const configs of Object.values(saved)) {
+            for (const cfg of configs) {
+              if (cfg.shopName === undefined) {
+                (cfg as unknown as Record<string, unknown>).shopName = '';
+              }
+            }
+          }
+        }
         return ps;
       },
-      version: 1,
+      version: 2,
     }
   )
 );

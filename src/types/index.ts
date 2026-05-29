@@ -44,6 +44,7 @@ export interface CalculationConfig {
 export interface SavedCalcConfig {
   id: string;
   name: string; // 配置名称，如"默认方案"、"含运费利润"
+  shopName: string; // 关联的店铺名称，从店铺名称明细中选择
   fieldMapping: CalculationConfig['fieldMapping'];
   formulas: CalculationConfig['formulas'];
   createdAt: number;
