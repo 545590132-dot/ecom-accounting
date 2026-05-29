@@ -21,7 +21,7 @@ const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
   sku: '',
   quantity: '',
   unitPrice: '',
-  totalAmount: '',
+  platformDiscount: '',
   platformFee: '',
   shippingFee: '',
 };
@@ -32,15 +32,15 @@ const DEFAULT_FIELD_ALIASES: Record<string, string> = {
   sku: 'SKU',
   quantity: '数量',
   unitPrice: '单价',
-  totalAmount: '订单金额',
+  platformDiscount: '平台折扣',
   platformFee: '平台手续费',
   shippingFee: '运费',
 };
 
 const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
-  totalAmount: 'totalAmount', // 默认直接使用字段映射的 totalAmount 值
+  totalAmount: '(unitPrice + platformDiscount) * 1.7',
   netAmount: 'totalAmount - platformFee',
-  profit: 'netAmount - purchasePrice * quantity - shippingFee',
+  profit: 'totalAmount - purchasePrice * quantity',
   profitRate: 'totalAmount > 0 ? profit / totalAmount * 100 : 0',
 };
 
@@ -440,26 +440,25 @@ export const useAppStore = create<AppState>()(
             const sku = getStrValue(mapping.sku);
             const skuInfo = skuMap.find((m) => m.sku === sku);
             const purchasePrice = skuInfo?.purchasePrice ?? 0;
-            const productName = skuInfo?.productName ?? '';
+            // SKU 无法匹配出商品名称时，直接使用 SKU 作为商品名称
+            const productName = skuInfo?.productName || sku;
             // 店铺名称：优先使用计算配置中选择的店铺名称，否则使用导入时指定的店铺名称
             const shopName = config.shopName || orderFile.shopName || '';
             // 年月：优先使用用户导入时自定义的年月
             const orderDate = orderFile.yearMonth || '';
 
             // 从字段映射中获取原始数值
-            const rawTotalAmount = getNumValue(mapping.totalAmount);
             const platformFee = getNumValue(mapping.platformFee);
             const shippingFee = getNumValue(mapping.shippingFee);
             const quantity = getNumValue(mapping.quantity);
             const unitPrice = getNumValue(mapping.unitPrice);
+            const platformDiscount = getNumValue(mapping.platformDiscount);
 
             // 构建公式上下文：字段映射值 + 采购单价
             const formulaContext: Record<string, number> = {
-              orderNo: 0, // 订单号不是数值，但在公式中不需要
-              sku: 0,
               quantity,
               unitPrice,
-              totalAmount: rawTotalAmount, // 字段映射的原始值，公式可引用或重写
+              platformDiscount,
               platformFee,
               shippingFee,
               purchasePrice,
@@ -477,6 +476,8 @@ export const useAppStore = create<AppState>()(
 
             const profitRate = evalFormula(config.formulas.profitRate, formulaContext);
 
+            const purchaseCost = purchasePrice * quantity;
+
             calculatedOrders.push({
               id: generateId(),
               orderNo: getStrValue(mapping.orderNo),
@@ -486,11 +487,13 @@ export const useAppStore = create<AppState>()(
               orderDate,
               quantity,
               unitPrice,
+              platformDiscount,
               totalAmount: computedTotalAmount,
               platformFee,
               shippingFee,
               netAmount,
               purchasePrice,
+              purchaseCost,
               profit,
               profitRate,
               rawRow: row,
@@ -541,11 +544,12 @@ export const useAppStore = create<AppState>()(
 
         for (const order of summary.orders) {
           // 仅按商品名称分类，不按 SKU 分类
-          const key = `${order.productName || order.sku}|${order.shopName || '__all__'}`;
+          const displayName = order.productName || order.sku;
+          const key = `${displayName}|${order.shopName || '__all__'}`;
           if (!skuMap.has(key)) {
             skuMap.set(key, {
               sku: order.sku,
-              productName: order.productName,
+              productName: displayName,
               shopName: order.shopName || '-',
               purchasePrice: order.purchasePrice,
               totalQuantity: 0,
@@ -564,7 +568,7 @@ export const useAppStore = create<AppState>()(
           s.totalSales += order.totalAmount;
           s.totalPlatformFee += order.platformFee;
           s.totalNetAmount += order.netAmount;
-          s.totalPurchaseCost += order.purchasePrice * order.quantity;
+          s.totalPurchaseCost += order.purchaseCost;
           s.totalProfit += order.profit;
           s.orderCount += 1;
         }

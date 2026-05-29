@@ -242,7 +242,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const [activeFormulaKey, setActiveFormulaKey] = useState<string | null>(null);
 
   // 字段 key 列表（用于字段映射区域渲染和公式变量参考）
-  const fieldKeys = ['orderNo', 'sku', 'quantity', 'unitPrice', 'totalAmount', 'platformFee', 'shippingFee'];
+  const fieldKeys = ['orderNo', 'sku', 'quantity', 'unitPrice', 'platformDiscount', 'platformFee', 'shippingFee'];
 
   // 获取字段别名（自定义名称），优先使用 fieldAliases，否则 fallback 到默认中文名
   const getFieldAlias = (key: string): string => {
@@ -250,9 +250,9 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   };
 
   const formulaLabels: Record<string, string> = {
-    totalAmount: '总金额',
+    totalAmount: '总金额（总价）',
     netAmount: '扣除手续费后金额',
-    profit: '单品利润',
+    profit: '利润',
     profitRate: '利润率(%)',
   };
 
@@ -941,6 +941,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
                   总价: s.totalSales,
                   平均单价: s.avgUnitPrice,
                   采购单价: s.purchasePrice,
+                  采购成本: s.totalPurchaseCost,
                   利润: s.totalProfit,
                   利润率: `${s.profitRate.toFixed(1)}%`,
                 }))
@@ -952,11 +953,13 @@ function PlatformStats({ platform }: { platform: Platform }) {
                   日期: o.orderDate || '-',
                   数量: o.quantity,
                   单价: o.unitPrice,
-                  订单金额: o.totalAmount,
+                  平台折扣: o.platformDiscount,
+                  总价: o.totalAmount,
                   手续费: o.platformFee,
                   运费: o.shippingFee,
                   扣费后金额: o.netAmount,
                   采购单价: o.purchasePrice,
+                  采购成本: o.purchaseCost,
                   利润: o.profit,
                   利润率: `${o.profitRate.toFixed(1)}%`,
                 }));
@@ -993,6 +996,7 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
                 <TableHead className="w-[130px] text-right">总价</TableHead>
                 <TableHead className="w-[110px] text-right">平均单价</TableHead>
                 <TableHead className="w-[110px] text-right">采购单价</TableHead>
+                <TableHead className="w-[120px] text-right">采购成本</TableHead>
                 <TableHead className="w-[120px] text-right">利润</TableHead>
                 <TableHead className="w-[80px] text-right">利润率</TableHead>
               </TableRow>
@@ -1006,6 +1010,7 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
                   <TableCell className="text-right font-mono">{formatCurrency(s.totalSales)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.avgUnitPrice)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.purchasePrice)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(s.totalPurchaseCost)}</TableCell>
                   <TableCell className="text-right font-mono" style={{ color: s.totalProfit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(s.totalProfit)}
                   </TableCell>
@@ -1038,11 +1043,13 @@ function OrderDetailTable({ orders }: { orders: CalculatedOrder[] }) {
                 <TableHead className="w-[80px]">日期</TableHead>
                 <TableHead className="w-[60px] text-right">数量</TableHead>
                 <TableHead className="w-[100px] text-right">单价</TableHead>
-                <TableHead className="w-[110px] text-right">订单金额</TableHead>
+                <TableHead className="w-[100px] text-right">平台折扣</TableHead>
+                <TableHead className="w-[110px] text-right">总价</TableHead>
                 <TableHead className="w-[100px] text-right">手续费</TableHead>
                 <TableHead className="w-[80px] text-right">运费</TableHead>
                 <TableHead className="w-[110px] text-right">扣费后金额</TableHead>
                 <TableHead className="w-[100px] text-right">采购单价</TableHead>
+                <TableHead className="w-[110px] text-right">采购成本</TableHead>
                 <TableHead className="w-[100px] text-right">利润</TableHead>
                 <TableHead className="w-[80px] text-right">利润率</TableHead>
               </TableRow>
@@ -1057,11 +1064,13 @@ function OrderDetailTable({ orders }: { orders: CalculatedOrder[] }) {
                   <TableCell className="text-xs text-muted-foreground">{order.orderDate || '-'}</TableCell>
                   <TableCell className="text-right font-mono">{order.quantity}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(order.unitPrice)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(order.platformDiscount)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(order.totalAmount)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(order.platformFee)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(order.shippingFee)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(order.netAmount)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(order.purchasePrice)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(order.purchaseCost)}</TableCell>
                   <TableCell className="text-right font-mono" style={{ color: order.profit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(order.profit)}
                   </TableCell>

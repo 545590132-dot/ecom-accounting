@@ -27,20 +27,20 @@ export interface CalculationConfig {
     sku: string; // SKU 字段名
     quantity: string; // 数量字段名
     unitPrice: string; // 单价字段名
-    totalAmount: string; // 订单总金额字段名
+    platformDiscount: string; // 平台折扣字段名
     platformFee: string; // 平台手续费字段名
     shippingFee: string; // 运费字段名
     [key: string]: string; // 允许自定义扩展字段
   };
   // 计算公式（JavaScript 表达式，变量来自字段映射值 + purchasePrice）
-  // 可用变量：orderNo, sku, quantity, unitPrice, totalAmount, platformFee, shippingFee（字段映射值）
+  // 可用变量：quantity, unitPrice, platformDiscount, platformFee, shippingFee（字段映射值）
   //           purchasePrice（来自 SKU 映射的采购单价）
   //           以及已计算的其他公式结果（按定义顺序：totalAmount → netAmount → profit → profitRate）
   formulas: {
-    totalAmount: string; // 总金额 = 默认使用字段映射的 totalAmount 值（也可改为 unitPrice * quantity 等）
+    totalAmount: string; // 总金额 = (单价 + 平台折扣) * 1.7
     netAmount: string; // 扣除手续费后金额 = totalAmount - platformFee
-    profit: string; // 单品利润 = netAmount - purchasePrice * quantity - shippingFee
-    profitRate: string; // 利润率(%) = profit / totalAmount * 100
+    profit: string; // 利润 = 总价 - 采购成本
+    profitRate: string; // 利润率(%) = 利润 / 总价 * 100
   };
 }
 
@@ -78,12 +78,14 @@ export interface CalculatedOrder {
   orderDate: string; // 订单日期（年-月格式，如 2025-01）
   quantity: number;
   unitPrice: number;
+  platformDiscount: number; // 平台折扣
   totalAmount: number;
   platformFee: number;
   shippingFee: number;
   netAmount: number; // 扣除手续费后金额
   purchasePrice: number;
-  profit: number; // 单品利润
+  purchaseCost: number; // 采购成本 = 采购单价 * 数量
+  profit: number; // 利润
   profitRate: number; // 利润率(%)
   rawRow: Record<string, string | number>;
 }
