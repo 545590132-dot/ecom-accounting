@@ -1,6 +1,14 @@
 // 电商平台类型
 export type Platform = 'shopee' | 'lazada' | 'tiktok';
 
+// 店铺名称
+export interface ShopName {
+  id: string;
+  name: string; // 店铺名称
+  platform: Platform; // 所属平台
+  createdAt: number;
+}
+
 // SKU 映射条目
 export interface SkuMapping {
   id: string;
@@ -22,6 +30,8 @@ export interface CalculationConfig {
     totalAmount: string; // 订单总金额字段名
     platformFee: string; // 平台手续费字段名
     shippingFee: string; // 运费字段名
+    shopName: string; // 店铺名称字段名
+    orderDate: string; // 订单日期字段名
     [key: string]: string; // 允许自定义扩展字段
   };
   // 计算公式（JavaScript 表达式，可通过 eval 计算）
@@ -57,6 +67,8 @@ export interface CalculatedOrder {
   orderNo: string;
   sku: string;
   productName: string;
+  shopName: string; // 店铺名称
+  orderDate: string; // 订单日期（年-月格式，如 2025-01）
   quantity: number;
   unitPrice: number;
   totalAmount: number;
@@ -85,6 +97,7 @@ export interface PlatformSummary {
 export interface SkuSummary {
   sku: string;
   productName: string;
+  shopName: string; // 店铺名称（用于分组）
   purchasePrice: number;
   totalQuantity: number;
   totalSales: number;

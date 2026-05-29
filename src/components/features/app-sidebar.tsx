@@ -8,7 +8,7 @@ import type { Platform } from '@/types';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Package, ChevronLeft, ChevronRight,
-  Calculator,
+  Calculator, Store,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -22,6 +22,11 @@ const NAV_ITEMS = [
     title: 'SKU 映射',
     href: '/sku',
     icon: Package,
+  },
+  {
+    title: '店铺名称明细',
+    href: '/shops',
+    icon: Store,
   },
 ];
 

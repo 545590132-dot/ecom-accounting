@@ -11,6 +11,7 @@ import type {
   CalculatedOrder,
   PlatformSummary,
   SkuSummary,
+  ShopName,
 } from '@/types';
 import { generateId } from '@/types';
 
@@ -23,6 +24,8 @@ const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
   totalAmount: '',
   platformFee: '',
   shippingFee: '',
+  shopName: '',
+  orderDate: '',
 };
 
 const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
@@ -50,6 +53,15 @@ interface AppState {
   deleteSkuMapping: (id: string) => void;
   importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => void;
   clearSkuMappings: () => void;
+
+  // 店铺名称管理
+  shopNames: ShopName[];
+  addShopName: (platform: Platform, name: string) => void;
+  addShopNamesBatch: (platform: Platform, names: string[]) => void;
+  deleteShopName: (id: string) => void;
+  updateShopName: (id: string, name: string) => void;
+  clearShopNames: (platform: Platform) => void;
+  getShopNamesByPlatform: (platform: Platform) => ShopName[];
 
   // 各平台已导入表格的可用字段（从导入文件的表头自动提取）
   availableHeaders: Record<Platform, string[]>;
@@ -135,6 +147,35 @@ export const useAppStore = create<AppState>()(
           ],
         })),
       clearSkuMappings: () => set({ skuMappings: [] }),
+
+      // 店铺名称管理
+      shopNames: [],
+      addShopName: (platform, name) =>
+        set((state) => ({
+          shopNames: [...state.shopNames, { id: generateId(), name, platform, createdAt: Date.now() }],
+        })),
+      addShopNamesBatch: (platform, names) =>
+        set((state) => ({
+          shopNames: [
+            ...state.shopNames,
+            ...names.map((name) => ({ id: generateId(), name, platform, createdAt: Date.now() })),
+          ],
+        })),
+      deleteShopName: (id) =>
+        set((state) => ({
+          shopNames: state.shopNames.filter((s) => s.id !== id),
+        })),
+      updateShopName: (id, name) =>
+        set((state) => ({
+          shopNames: state.shopNames.map((s) => (s.id === id ? { ...s, name } : s)),
+        })),
+      clearShopNames: (platform) =>
+        set((state) => ({
+          shopNames: state.shopNames.filter((s) => s.platform !== platform),
+        })),
+      getShopNamesByPlatform: (platform) => {
+        return get().shopNames.filter((s) => s.platform === platform);
+      },
 
       // 可用表头字段（从导入的表格自动收集）
       availableHeaders: { shopee: [], lazada: [], tiktok: [] },
@@ -335,6 +376,22 @@ export const useAppStore = create<AppState>()(
             const skuInfo = skuMap.find((m) => m.sku === sku);
             const purchasePrice = skuInfo?.purchasePrice ?? 0;
             const productName = skuInfo?.productName ?? '';
+            const shopName = getStrValue(mapping.shopName);
+            // 尝试从日期字段中提取年月
+            const rawDate = getStrValue(mapping.orderDate);
+            let orderDate = '';
+            if (rawDate) {
+              const dateMatch = rawDate.match(/(\d{4})[/\-年](\d{1,2})/);
+              if (dateMatch) {
+                orderDate = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}`;
+              } else {
+                // 尝试解析完整日期
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) {
+                  orderDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                }
+              }
+            }
 
             const totalAmount = getNumValue(mapping.totalAmount);
             const platformFee = getNumValue(mapping.platformFee);
@@ -349,6 +406,8 @@ export const useAppStore = create<AppState>()(
               orderNo: getStrValue(mapping.orderNo),
               sku,
               productName,
+              shopName,
+              orderDate,
               quantity,
               unitPrice: getNumValue(mapping.unitPrice),
               totalAmount,
@@ -402,11 +461,12 @@ export const useAppStore = create<AppState>()(
         const skuMap = new Map<string, SkuSummary>();
 
         for (const order of summary.orders) {
-          const key = order.sku;
+          const key = `${order.sku}|${order.shopName || '__all__'}`;
           if (!skuMap.has(key)) {
             skuMap.set(key, {
               sku: order.sku,
               productName: order.productName,
+              shopName: order.shopName || '-',
               purchasePrice: order.purchasePrice,
               totalQuantity: 0,
               totalSales: 0,

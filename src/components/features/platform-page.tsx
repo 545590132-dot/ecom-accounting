@@ -193,6 +193,8 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
     totalAmount: '订单金额',
     platformFee: '平台手续费',
     shippingFee: '运费',
+    shopName: '店铺名称',
+    orderDate: '订单日期',
   };
 
   const formulaLabels: Record<string, string> = {
@@ -507,11 +509,69 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
 
 // 平台统计结果组件
 function PlatformStats({ platform }: { platform: Platform }) {
-  const { calculateSummary, calculateSkuSummaries } = useAppStore();
+  const { calculateSummary, calculateSkuSummaries, shopNames } = useAppStore();
   const summary = calculateSummary(platform);
   const skuSummaries = calculateSkuSummaries(platform);
   const platformConfig = PLATFORM_CONFIG[platform];
   const [viewMode, setViewMode] = useState<'orders' | 'sku'>('sku');
+  const [filterShop, setFilterShop] = useState<string>('__all__');
+  const [filterYearMonth, setFilterYearMonth] = useState<string>('__all__');
+
+  // 获取该平台下的店铺名称列表
+  const platformShops = shopNames.filter((s) => s.platform === platform);
+
+  // 从订单数据中提取可用的年月选项
+  const availableYearMonths = Array.from(
+    new Set(summary.orders.map((o) => o.orderDate).filter(Boolean))
+  ).sort().reverse();
+
+  // 筛选订单
+  const filteredOrders = summary.orders.filter((o) => {
+    if (filterShop !== '__all__' && o.shopName !== filterShop) return false;
+    if (filterYearMonth !== '__all__' && o.orderDate !== filterYearMonth) return false;
+    return true;
+  });
+
+  // 筛选后的 SKU 汇总
+  const filteredSkuSummaries = (() => {
+    const map = new Map<string, SkuSummary>();
+    for (const order of filteredOrders) {
+      const key = `${order.sku}|${order.shopName || '__all__'}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          sku: order.sku,
+          productName: order.productName,
+          shopName: order.shopName || '-',
+          purchasePrice: order.purchasePrice,
+          totalQuantity: 0,
+          totalSales: 0,
+          totalPlatformFee: 0,
+          totalNetAmount: 0,
+          totalPurchaseCost: 0,
+          totalProfit: 0,
+          orderCount: 0,
+        });
+      }
+      const s = map.get(key)!;
+      s.totalQuantity += order.quantity;
+      s.totalSales += order.totalAmount;
+      s.totalPlatformFee += order.platformFee;
+      s.totalNetAmount += order.netAmount;
+      s.totalPurchaseCost += order.purchasePrice * order.quantity;
+      s.totalProfit += order.profit;
+      s.orderCount += 1;
+    }
+    return Array.from(map.values());
+  })();
+
+  // 筛选后的汇总数据
+  const filteredTotalSales = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.totalAmount, 0);
+  const filteredTotalOrders = new Set(filteredOrders.map((o: CalculatedOrder) => o.orderNo)).size;
+  const filteredTotalQuantity = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.quantity, 0);
+  const filteredTotalPlatformFee = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.platformFee, 0);
+  const filteredTotalNetAmount = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.netAmount, 0);
+  const filteredTotalPurchaseCost = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.purchasePrice * o.quantity, 0);
+  const filteredTotalProfit = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.profit, 0);
 
   const hasData = summary.orders.length > 0;
 
@@ -525,8 +585,73 @@ function PlatformStats({ platform }: { platform: Platform }) {
     );
   }
 
+  // 筛选条件是否生效
+  const isFiltering = filterShop !== '__all__' || filterYearMonth !== '__all__';
+
   return (
     <div className="space-y-6">
+      {/* 筛选器 */}
+      <Card>
+        <CardContent className="pt-4 pb-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">筛选：</span>
+            </div>
+            {/* 店铺名称筛选 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-muted-foreground shrink-0">店铺名称</label>
+              <Select value={filterShop} onValueChange={setFilterShop}>
+                <SelectTrigger className="h-8 w-[160px]">
+                  <SelectValue placeholder="全部店铺" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">全部店铺</SelectItem>
+                  {platformShops.map((s) => (
+                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                  ))}
+                  {/* 也添加订单中实际出现但未在店铺列表中的名称 */}
+                  {Array.from(new Set(summary.orders.map((o) => o.shopName).filter(Boolean)))
+                    .filter((name) => !platformShops.some((s) => s.name === name))
+                    .map((name) => (
+                      <SelectItem key={name} value={name}>{name}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* 年月筛选 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-muted-foreground shrink-0">年月</label>
+              <Select value={filterYearMonth} onValueChange={setFilterYearMonth}>
+                <SelectTrigger className="h-8 w-[140px]">
+                  <SelectValue placeholder="全部时间" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">全部时间</SelectItem>
+                  {availableYearMonths.map((ym) => (
+                    <SelectItem key={ym} value={ym}>{ym}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* 重置 */}
+            {isFiltering && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setFilterShop('__all__'); setFilterYearMonth('__all__'); }}
+              >
+                重置筛选
+              </Button>
+            )}
+            {isFiltering && (
+              <span className="text-xs text-muted-foreground">
+                已筛选 {filteredOrders.length} / {summary.orders.length} 条订单
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* 汇总卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
@@ -536,7 +661,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
               总销售额
             </div>
             <div className="text-lg font-bold font-mono">
-              {formatCurrency(summary.totalSales)}
+              {formatCurrency(filteredTotalSales)}
             </div>
           </CardContent>
         </Card>
@@ -547,7 +672,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
               总单量
             </div>
             <div className="text-lg font-bold font-mono">
-              {summary.totalOrders}
+              {filteredTotalOrders}
             </div>
           </CardContent>
         </Card>
@@ -558,18 +683,18 @@ function PlatformStats({ platform }: { platform: Platform }) {
               总商品数量
             </div>
             <div className="text-lg font-bold font-mono">
-              {summary.totalQuantity}
+              {filteredTotalQuantity}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2 text-xs mb-1" style={{ color: summary.totalProfit >= 0 ? '#10b981' : '#ef4444' }}>
-              {summary.totalProfit >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+            <div className="flex items-center gap-2 text-xs mb-1" style={{ color: filteredTotalProfit >= 0 ? '#10b981' : '#ef4444' }}>
+              {filteredTotalProfit >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
               总利润
             </div>
-            <div className="text-lg font-bold font-mono" style={{ color: summary.totalProfit >= 0 ? '#10b981' : '#ef4444' }}>
-              {formatCurrency(summary.totalProfit)}
+            <div className="text-lg font-bold font-mono" style={{ color: filteredTotalProfit >= 0 ? '#10b981' : '#ef4444' }}>
+              {formatCurrency(filteredTotalProfit)}
             </div>
           </CardContent>
         </Card>
@@ -579,20 +704,20 @@ function PlatformStats({ platform }: { platform: Platform }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="text-sm">
           <span className="text-muted-foreground">扣除手续费后金额: </span>
-          <span className="font-medium font-mono">{formatCurrency(summary.totalNetAmount)}</span>
+          <span className="font-medium font-mono">{formatCurrency(filteredTotalNetAmount)}</span>
         </div>
         <div className="text-sm">
           <span className="text-muted-foreground">总平台手续费: </span>
-          <span className="font-medium font-mono">{formatCurrency(summary.totalPlatformFee)}</span>
+          <span className="font-medium font-mono">{formatCurrency(filteredTotalPlatformFee)}</span>
         </div>
         <div className="text-sm">
           <span className="text-muted-foreground">总采购成本: </span>
-          <span className="font-medium font-mono">{formatCurrency(summary.totalPurchaseCost)}</span>
+          <span className="font-medium font-mono">{formatCurrency(filteredTotalPurchaseCost)}</span>
         </div>
         <div className="text-sm">
           <span className="text-muted-foreground">利润率: </span>
-          <span className="font-medium font-mono" style={{ color: summary.totalSales > 0 ? (summary.totalProfit / summary.totalSales * 100 >= 0 ? '#10b981' : '#ef4444') : 'inherit' }}>
-            {summary.totalSales > 0 ? (summary.totalProfit / summary.totalSales * 100).toFixed(1) : '0.0'}%
+          <span className="font-medium font-mono" style={{ color: filteredTotalSales > 0 ? (filteredTotalProfit / filteredTotalSales * 100 >= 0 ? '#10b981' : '#ef4444') : 'inherit' }}>
+            {filteredTotalSales > 0 ? (filteredTotalProfit / filteredTotalSales * 100).toFixed(1) : '0.0'}%
           </span>
         </div>
       </div>
@@ -622,9 +747,10 @@ function PlatformStats({ platform }: { platform: Platform }) {
           size="sm"
           onClick={() => {
             const data = viewMode === 'sku'
-              ? skuSummaries.map((s: SkuSummary) => ({
+              ? filteredSkuSummaries.map((s: SkuSummary) => ({
                   SKU: s.sku,
                   商品名称: s.productName,
+                  店铺名称: s.shopName,
                   采购单价: s.purchasePrice,
                   总销量: s.totalQuantity,
                   总销售额: s.totalSales,
@@ -634,10 +760,12 @@ function PlatformStats({ platform }: { platform: Platform }) {
                   总利润: s.totalProfit,
                   订单数: s.orderCount,
                 }))
-              : summary.orders.map((o: CalculatedOrder) => ({
+              : filteredOrders.map((o: CalculatedOrder) => ({
                   订单号: o.orderNo,
                   SKU: o.sku,
                   商品名称: o.productName,
+                  店铺名称: o.shopName || '-',
+                  日期: o.orderDate || '-',
                   数量: o.quantity,
                   单价: o.unitPrice,
                   订单金额: o.totalAmount,
@@ -657,9 +785,9 @@ function PlatformStats({ platform }: { platform: Platform }) {
 
       {/* 数据表格 */}
       {viewMode === 'sku' ? (
-        <SkuSummaryTable summaries={skuSummaries} />
+        <SkuSummaryTable summaries={filteredSkuSummaries} />
       ) : (
-        <OrderDetailTable summary={summary} />
+        <OrderDetailTable orders={filteredOrders} />
       )}
     </div>
   );
@@ -676,6 +804,7 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
               <TableRow>
                 <TableHead className="w-[140px]">SKU</TableHead>
                 <TableHead>商品名称</TableHead>
+                <TableHead className="w-[120px]">店铺名称</TableHead>
                 <TableHead className="w-[100px] text-right">采购单价</TableHead>
                 <TableHead className="w-[80px] text-right">销量</TableHead>
                 <TableHead className="w-[120px] text-right">销售额</TableHead>
@@ -687,9 +816,10 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
             </TableHeader>
             <TableBody>
               {summaries.map((s) => (
-                <TableRow key={s.sku}>
+                <TableRow key={`${s.sku}-${s.shopName}`}>
                   <TableCell className="font-mono text-sm">{s.sku}</TableCell>
                   <TableCell>{s.productName || '-'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.purchasePrice)}</TableCell>
                   <TableCell className="text-right font-mono">{s.totalQuantity}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.totalSales)}</TableCell>
@@ -710,7 +840,7 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
 }
 
 // 订单明细表格
-function OrderDetailTable({ summary }: { summary: PlatformSummary }) {
+function OrderDetailTable({ orders }: { orders: CalculatedOrder[] }) {
   return (
     <Card>
       <CardContent className="p-0">
@@ -721,6 +851,8 @@ function OrderDetailTable({ summary }: { summary: PlatformSummary }) {
                 <TableHead className="w-[140px]">订单号</TableHead>
                 <TableHead className="w-[120px]">SKU</TableHead>
                 <TableHead>商品名称</TableHead>
+                <TableHead className="w-[100px]">店铺名称</TableHead>
+                <TableHead className="w-[80px]">日期</TableHead>
                 <TableHead className="w-[60px] text-right">数量</TableHead>
                 <TableHead className="w-[100px] text-right">单价</TableHead>
                 <TableHead className="w-[110px] text-right">订单金额</TableHead>
@@ -732,11 +864,13 @@ function OrderDetailTable({ summary }: { summary: PlatformSummary }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {summary.orders.slice(0, 100).map((order) => (
+              {orders.slice(0, 100).map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="font-mono text-xs">{order.orderNo}</TableCell>
                   <TableCell className="font-mono text-sm">{order.sku}</TableCell>
                   <TableCell className="max-w-[200px] truncate">{order.productName || '-'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{order.shopName || '-'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{order.orderDate || '-'}</TableCell>
                   <TableCell className="text-right font-mono">{order.quantity}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(order.unitPrice)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(order.totalAmount)}</TableCell>
@@ -751,9 +885,9 @@ function OrderDetailTable({ summary }: { summary: PlatformSummary }) {
               ))}
             </TableBody>
           </Table>
-          {summary.orders.length > 100 && (
+          {orders.length > 100 && (
             <div className="py-3 text-center text-sm text-muted-foreground">
-              仅显示前 100 条，共 {summary.orders.length} 条。请点击「导出」查看完整数据。
+              仅显示前 100 条，共 {orders.length} 条。请点击「导出」查看完整数据。
             </div>
           )}
         </div>
