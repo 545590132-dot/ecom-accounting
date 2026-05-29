@@ -1,0 +1,285 @@
+'use client';
+
+import React, { useState, useCallback, useRef } from 'react';
+import { useAppStore } from '@/store';
+import { parseExcelFile, downloadSkuTemplate, importSkuFromExcel } from '@/lib/excel';
+import { formatCurrency } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Upload, Download, Plus, Trash2, Edit3, Search, Package } from 'lucide-react';
+import type { SkuMapping } from '@/types';
+
+export function SkuManager() {
+  const { skuMappings, addSkuMapping, updateSkuMapping, deleteSkuMapping, importSkuMappings, clearSkuMappings } = useAppStore();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<SkuMapping>>({});
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '' });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredMappings = skuMappings.filter(
+    (m: SkuMapping) =>
+      m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (m.category && m.category.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const { rows } = await parseExcelFile(file);
+      const mappings = importSkuFromExcel(rows);
+      if (mappings.length > 0) {
+        importSkuMappings(mappings);
+      }
+    } catch (err) {
+      console.error('导入失败:', err);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [importSkuMappings]);
+
+  const handleAdd = () => {
+    if (!newSku.sku || !newSku.productName) return;
+    addSkuMapping(newSku);
+    setNewSku({ sku: '', productName: '', purchasePrice: 0, category: '' });
+    setDialogOpen(false);
+  };
+
+  const startEdit = (mapping: SkuMapping) => {
+    setEditingId(mapping.id);
+    setEditForm({ ...mapping });
+  };
+
+  const saveEdit = () => {
+    if (editingId && editForm) {
+      updateSkuMapping(editingId, editForm);
+      setEditingId(null);
+      setEditForm({});
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditForm({});
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 操作栏 */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="搜索 SKU / 商品名称 / 分类..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleImport}
+          />
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="h-4 w-4 mr-1.5" />
+            导入 SKU
+          </Button>
+          <Button variant="outline" size="sm" onClick={downloadSkuTemplate}>
+            <Download className="h-4 w-4 mr-1.5" />
+            下载模板
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-1.5" />
+                新增 SKU
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>新增 SKU 映射</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label>SKU 编码 *</Label>
+                  <Input
+                    placeholder="例如: SKU-001"
+                    value={newSku.sku}
+                    onChange={(e) => setNewSku({ ...newSku, sku: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>商品名称 *</Label>
+                  <Input
+                    placeholder="例如: 蓝牙耳机 Pro"
+                    value={newSku.productName}
+                    onChange={(e) => setNewSku({ ...newSku, productName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>采购单价</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={newSku.purchasePrice || ''}
+                    onChange={(e) => setNewSku({ ...newSku, purchasePrice: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>分类（可选）</Label>
+                  <Input
+                    placeholder="例如: 电子产品"
+                    value={newSku.category}
+                    onChange={(e) => setNewSku({ ...newSku, category: e.target.value })}
+                  />
+                </div>
+                <Button onClick={handleAdd} className="w-full" disabled={!newSku.sku || !newSku.productName}>
+                  确认添加
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* 格式参考提示 */}
+      <Card className="border-dashed">
+        <CardContent className="py-3">
+          <div className="flex items-start gap-3">
+            <Package className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+            <div className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">导入格式参考：</span>
+              表格需包含列头「SKU编码」「商品名称」「采购单价」「分类（可选）」，
+              可点击「下载模板」获取标准格式文件。导入时将自动匹配列头。
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 数据统计 */}
+      <div className="flex gap-4 text-sm text-muted-foreground">
+        <span>共 <span className="font-medium text-foreground">{skuMappings.length}</span> 条 SKU 映射</span>
+        {filteredMappings.length !== skuMappings.length && (
+          <span>筛选显示 <span className="font-medium text-foreground">{filteredMappings.length}</span> 条</span>
+        )}
+        {skuMappings.length > 0 && (
+          <Button variant="ghost" size="sm" className="h-auto p-0 text-destructive hover:text-destructive" onClick={clearSkuMappings}>
+            清空全部
+          </Button>
+        )}
+      </div>
+
+      {/* SKU 表格 */}
+      <Card>
+        <CardContent className="p-0">
+          {filteredMappings.length === 0 ? (
+            <div className="py-16 text-center text-muted-foreground">
+              <Package className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p>{skuMappings.length === 0 ? '暂无 SKU 映射数据' : '没有匹配的搜索结果'}</p>
+              <p className="text-xs mt-1">
+                {skuMappings.length === 0 ? '点击「导入 SKU」或「新增 SKU」添加数据' : '尝试修改搜索条件'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[160px]">SKU 编码</TableHead>
+                    <TableHead>商品名称</TableHead>
+                    <TableHead className="w-[120px] text-right">采购单价</TableHead>
+                    <TableHead className="w-[120px]">分类</TableHead>
+                    <TableHead className="w-[100px] text-center">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredMappings.map((mapping: SkuMapping) => (
+                    <TableRow key={mapping.id}>
+                      {editingId === mapping.id ? (
+                        <>
+                          <TableCell>
+                            <Input
+                              value={editForm.sku ?? ''}
+                              onChange={(e) => setEditForm({ ...editForm, sku: e.target.value })}
+                              className="h-8"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={editForm.productName ?? ''}
+                              onChange={(e) => setEditForm({ ...editForm, productName: e.target.value })}
+                              className="h-8"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={editForm.purchasePrice ?? 0}
+                              onChange={(e) => setEditForm({ ...editForm, purchasePrice: parseFloat(e.target.value) || 0 })}
+                              className="h-8 text-right"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={editForm.category ?? ''}
+                              onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                              className="h-8"
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex justify-center gap-1">
+                              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={saveEdit}>保存</Button>
+                              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={cancelEdit}>取消</Button>
+                            </div>
+                          </TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell className="font-mono text-sm">{mapping.sku}</TableCell>
+                          <TableCell>{mapping.productName}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(mapping.purchasePrice)}
+                          </TableCell>
+                          <TableCell>
+                            {mapping.category ? (
+                              <Badge variant="secondary" className="text-xs">{mapping.category}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex justify-center gap-1">
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => startEdit(mapping)}>
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => deleteSkuMapping(mapping.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
