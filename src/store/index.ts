@@ -40,8 +40,8 @@ const DEFAULT_FIELD_ALIASES: Record<string, string> = {
 const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
   totalAmount: '(unitPrice + platformDiscount) * 1.7',
   netAmount: 'totalAmount - platformFee',
-  profit: 'totalAmount - purchasePrice * quantity',
-  profitRate: 'totalAmount > 0 ? profit / totalAmount * 100 : 0',
+  profit: 'totalAmount - purchasePrice * quantity',  // 利润 = 总价 - 采购成本(采购单价*销量)
+  profitRate: 'totalAmount > 0 ? (totalAmount - purchasePrice * quantity) / totalAmount * 100 : 0',  // 利润率 = 利润/总价*100
 };
 
 // 为每个平台创建默认配置
@@ -525,7 +525,8 @@ export const useAppStore = create<AppState>()(
         const totalPlatformFee = calculatedOrders.reduce((s, o) => s + o.platformFee, 0);
         const totalNetAmount = calculatedOrders.reduce((s, o) => s + o.netAmount, 0);
         const totalPurchaseCost = calculatedOrders.reduce((s, o) => s + o.purchasePrice * o.quantity, 0);
-        const totalProfit = calculatedOrders.reduce((s, o) => s + o.profit, 0);
+        // 总利润 = 总销售额 - 总采购成本（确保利润不会大于总价）
+        const totalProfit = totalSales - totalPurchaseCost;
         const totalProfitRate = totalSales > 0 ? totalProfit / totalSales * 100 : 0;
 
         return {
@@ -587,13 +588,14 @@ export const useAppStore = create<AppState>()(
           s.totalPlatformFee += order.platformFee;
           s.totalNetAmount += order.netAmount;
           s.totalPurchaseCost += order.purchaseCost;
-          s.totalProfit += order.profit;
           s.orderCount += 1;
         }
 
-        // 计算平均单价和利润率
+        // 计算平均单价、利润和利润率
+        // 利润 = 总价 - 采购成本（确保利润不会大于总价）
         for (const s of skuMap.values()) {
           s.avgUnitPrice = s.totalQuantity > 0 ? s.totalSales / s.totalQuantity : 0;
+          s.totalProfit = s.totalSales - s.totalPurchaseCost;
           s.profitRate = s.totalSales > 0 ? s.totalProfit / s.totalSales * 100 : 0;
         }
 
@@ -650,18 +652,33 @@ export const useAppStore = create<AppState>()(
                 formulas.totalAmount = '(unitPrice + platformDiscount) * 1.7';
               }
               if (formulas && formulas.profitRate === undefined) {
-                formulas.profitRate = 'totalAmount > 0 ? profit / totalAmount * 100 : 0';
+                formulas.profitRate = 'totalAmount > 0 ? (totalAmount - purchasePrice * quantity) / totalAmount * 100 : 0';
               }
               // 修复旧迁移中 totalAmount 自引用问题
               if (formulas && formulas.totalAmount === 'totalAmount') {
                 formulas.totalAmount = '(unitPrice + platformDiscount) * 1.7';
+              }
+              // 修复 profit 公式：利润 = 总价 - 采购成本，不应包含 netAmount
+              if (formulas && formulas.profit) {
+                const profitFormula = formulas.profit.trim();
+                // 旧公式包含 netAmount 的都需要修正
+                if (profitFormula.includes('netAmount')) {
+                  formulas.profit = 'totalAmount - purchasePrice * quantity';
+                }
+              }
+              // 修复 profitRate 公式：确保使用直接计算而非依赖 profit 变量
+              if (formulas && formulas.profitRate) {
+                const rateFormula = formulas.profitRate.trim();
+                if (rateFormula.includes('profit') && !rateFormula.includes('purchasePrice')) {
+                  formulas.profitRate = 'totalAmount > 0 ? (totalAmount - purchasePrice * quantity) / totalAmount * 100 : 0';
+                }
               }
             }
           }
         }
         return ps;
       },
-      version: 5,
+      version: 6,
     }
   )
 );
