@@ -30,11 +30,10 @@ export interface CalculationConfig {
     totalAmount: string; // 订单总金额字段名
     platformFee: string; // 平台手续费字段名
     shippingFee: string; // 运费字段名
-    orderDate: string; // 订单日期字段名
     [key: string]: string; // 允许自定义扩展字段
   };
   // 计算公式（JavaScript 表达式，变量来自字段映射值 + purchasePrice）
-  // 可用变量：orderNo, sku, quantity, unitPrice, totalAmount, platformFee, shippingFee, orderDate（字段映射值）
+  // 可用变量：orderNo, sku, quantity, unitPrice, totalAmount, platformFee, shippingFee（字段映射值）
   //           purchasePrice（来自 SKU 映射的采购单价）
   //           以及已计算的其他公式结果（按定义顺序：totalAmount → netAmount → profit → profitRate）
   formulas: {
@@ -66,6 +65,7 @@ export interface RawOrderData {
   headers: string[]; // 表头字段
   rows: Record<string, string | number>[]; // 原始行数据
   shopName?: string; // 导入时指定的店铺名称
+  yearMonth?: string; // 用户自定义的年月（格式：2025-01）
 }
 
 // 计算后的统计结果 - 单条订单
@@ -143,10 +143,10 @@ export const PLATFORM_CONFIG: Record<Platform, { name: string; color: string; bg
 
 // 格式化金额
 export function formatCurrency(value: number): string {
-  return value.toLocaleString('zh-CN', {
+  return '￥' + value.toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  });
+  }) + '元';
 }
 
 // 生成唯一 ID

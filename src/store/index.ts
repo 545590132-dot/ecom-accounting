@@ -24,7 +24,6 @@ const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
   totalAmount: '',
   platformFee: '',
   shippingFee: '',
-  orderDate: '',
 };
 
 // 字段默认别名（中文名称）
@@ -36,7 +35,6 @@ const DEFAULT_FIELD_ALIASES: Record<string, string> = {
   totalAmount: '订单金额',
   platformFee: '平台手续费',
   shippingFee: '运费',
-  orderDate: '订单日期',
 };
 
 const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
@@ -445,20 +443,8 @@ export const useAppStore = create<AppState>()(
             const productName = skuInfo?.productName ?? '';
             // 店铺名称：优先使用计算配置中选择的店铺名称，否则使用导入时指定的店铺名称
             const shopName = config.shopName || orderFile.shopName || '';
-            // 尝试从日期字段中提取年月
-            const rawDate = getStrValue(mapping.orderDate);
-            let orderDate = '';
-            if (rawDate) {
-              const dateMatch = rawDate.match(/(\d{4})[/\-年](\d{1,2})/);
-              if (dateMatch) {
-                orderDate = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}`;
-              } else {
-                const d = new Date(rawDate);
-                if (!isNaN(d.getTime())) {
-                  orderDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                }
-              }
-            }
+            // 年月：优先使用用户导入时自定义的年月
+            const orderDate = orderFile.yearMonth || '';
 
             // 从字段映射中获取原始数值
             const rawTotalAmount = getNumValue(mapping.totalAmount);
@@ -476,7 +462,6 @@ export const useAppStore = create<AppState>()(
               totalAmount: rawTotalAmount, // 字段映射的原始值，公式可引用或重写
               platformFee,
               shippingFee,
-              orderDate: 0,
               purchasePrice,
             };
 
@@ -555,7 +540,8 @@ export const useAppStore = create<AppState>()(
         const skuMap = new Map<string, SkuSummary>();
 
         for (const order of summary.orders) {
-          const key = `${order.sku}|${order.shopName || '__all__'}`;
+          // 仅按商品名称分类，不按 SKU 分类
+          const key = `${order.productName || order.sku}|${order.shopName || '__all__'}`;
           if (!skuMap.has(key)) {
             skuMap.set(key, {
               sku: order.sku,

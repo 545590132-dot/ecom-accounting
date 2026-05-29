@@ -38,28 +38,45 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
   const platformOrders = rawOrders[platform];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [yearMonth, setYearMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const config = PLATFORM_CONFIG[platform];
 
-  const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setPendingFile(file);
+    // 重置文件输入，以便同一文件可再次选择
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  const handleConfirmImport = useCallback(async () => {
+    if (!pendingFile) return;
     setImporting(true);
     try {
-      const { headers, rows } = await parseExcelFile(file);
+      const { headers, rows } = await parseExcelFile(pendingFile);
       if (rows.length === 0) return;
       importOrders(platform, {
         platform,
-        fileName: file.name,
+        fileName: pendingFile.name,
         headers,
         rows,
+        yearMonth,
       });
     } catch (err) {
       console.error('导入失败:', err);
     } finally {
       setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setPendingFile(null);
     }
-  }, [platform, importOrders]);
+  }, [platform, importOrders, pendingFile, yearMonth]);
+
+  const handleCancelImport = useCallback(() => {
+    setPendingFile(null);
+  }, []);
 
   const totalRows = platformOrders.reduce((sum: number, o: RawOrderData) => sum + o.rows.length, 0);
 
@@ -73,7 +90,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
             type="file"
             accept=".xlsx,.xls,.csv"
             className="hidden"
-            onChange={handleImport}
+            onChange={handleFileSelect}
           />
           <Button
             size="sm"
@@ -133,7 +150,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
                     <div>
                       <div className="font-medium text-sm">{order.fileName}</div>
                       <div className="text-xs text-muted-foreground">
-                        {order.rows.length} 条记录 · {order.headers.length} 个字段 · {new Date(order.importTime).toLocaleString('zh-CN')}
+                        {order.rows.length} 条记录 · {order.headers.length} 个字段 · {order.yearMonth ? `${order.yearMonth}` : '未设年月'} · {new Date(order.importTime).toLocaleString('zh-CN')}
                       </div>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {order.headers.slice(0, 8).map((h) => (
@@ -163,6 +180,39 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
           ))}
         </div>
       )}
+
+      {/* 年月选择弹窗 */}
+      <Dialog open={!!pendingFile} onOpenChange={(open) => { if (!open) handleCancelImport(); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>设置数据所属年月</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="text-sm text-muted-foreground">
+              请选择该表格数据所属的年份和月份，用于统计结果中按时间筛选。
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">年份月份</label>
+              <Input
+                type="month"
+                value={yearMonth}
+                onChange={(e) => setYearMonth(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div className="text-xs text-muted-foreground">
+              当前文件：<span className="font-medium text-foreground">{pendingFile?.name}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCancelImport}>取消</Button>
+            <Button onClick={handleConfirmImport} disabled={!yearMonth || importing}>
+              <Upload className="h-4 w-4 mr-1" />
+              {importing ? '导入中...' : '确认导入'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -192,7 +242,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const [activeFormulaKey, setActiveFormulaKey] = useState<string | null>(null);
 
   // 字段 key 列表（用于字段映射区域渲染和公式变量参考）
-  const fieldKeys = ['orderNo', 'sku', 'quantity', 'unitPrice', 'totalAmount', 'platformFee', 'shippingFee', 'orderDate'];
+  const fieldKeys = ['orderNo', 'sku', 'quantity', 'unitPrice', 'totalAmount', 'platformFee', 'shippingFee'];
 
   // 获取字段别名（自定义名称），优先使用 fieldAliases，否则 fallback 到默认中文名
   const getFieldAlias = (key: string): string => {
@@ -661,11 +711,11 @@ function PlatformStats({ platform }: { platform: Platform }) {
     return true;
   });
 
-  // 筛选后的 SKU 汇总
+  // 筛选后的商品汇总（仅按商品名称分类，不按 SKU 分类）
   const filteredSkuSummaries = (() => {
     const map = new Map<string, SkuSummary>();
     for (const order of filteredOrders) {
-      const key = `${order.sku}|${order.shopName || '__all__'}`;
+      const key = `${order.productName || order.sku}|${order.shopName || '__all__'}`;
       if (!map.has(key)) {
         map.set(key, {
           sku: order.sku,
@@ -869,7 +919,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
             size="sm"
             onClick={() => setViewMode('sku')}
           >
-            SKU 汇总
+            商品统计
           </Button>
           <Button
             variant={viewMode === 'orders' ? 'default' : 'outline'}
@@ -886,13 +936,11 @@ function PlatformStats({ platform }: { platform: Platform }) {
             const data = viewMode === 'sku'
               ? filteredSkuSummaries.map((s: SkuSummary) => ({
                   商品名称: s.productName,
-                  SKU: s.sku,
                   店铺名称: s.shopName,
                   销量: s.totalQuantity,
                   总价: s.totalSales,
                   平均单价: s.avgUnitPrice,
                   采购单价: s.purchasePrice,
-                  采购成本: s.totalPurchaseCost,
                   利润: s.totalProfit,
                   利润率: `${s.profitRate.toFixed(1)}%`,
                 }))
@@ -912,7 +960,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
                   利润: o.profit,
                   利润率: `${o.profitRate.toFixed(1)}%`,
                 }));
-            exportToExcel(data, `${platformConfig.name}_${viewMode === 'sku' ? 'SKU汇总' : '订单明细'}`);
+            exportToExcel(data, `${platformConfig.name}_${viewMode === 'sku' ? '商品统计' : '订单明细'}`);
           }}
         >
           <Download className="h-4 w-4 mr-1.5" />
@@ -930,7 +978,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   );
 }
 
-// SKU 汇总表格
+// 商品统计表格（按商品名称分类）
 function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
   return (
     <Card>
@@ -940,28 +988,24 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
             <TableHeader>
               <TableRow>
                 <TableHead>商品名称</TableHead>
-                <TableHead className="w-[120px]">SKU</TableHead>
                 <TableHead className="w-[100px]">店铺名称</TableHead>
                 <TableHead className="w-[80px] text-right">销量</TableHead>
-                <TableHead className="w-[120px] text-right">总价</TableHead>
-                <TableHead className="w-[100px] text-right">平均单价</TableHead>
-                <TableHead className="w-[100px] text-right">采购单价</TableHead>
-                <TableHead className="w-[120px] text-right">采购成本</TableHead>
+                <TableHead className="w-[130px] text-right">总价</TableHead>
+                <TableHead className="w-[110px] text-right">平均单价</TableHead>
+                <TableHead className="w-[110px] text-right">采购单价</TableHead>
                 <TableHead className="w-[120px] text-right">利润</TableHead>
                 <TableHead className="w-[80px] text-right">利润率</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {summaries.map((s) => (
-                <TableRow key={`${s.sku}-${s.shopName}`}>
+                <TableRow key={`${s.productName}-${s.shopName}`}>
                   <TableCell className="font-medium">{s.productName || '-'}</TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">{s.sku}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>
                   <TableCell className="text-right font-mono">{s.totalQuantity}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.totalSales)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.avgUnitPrice)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.purchasePrice)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(s.totalPurchaseCost)}</TableCell>
                   <TableCell className="text-right font-mono" style={{ color: s.totalProfit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(s.totalProfit)}
                   </TableCell>
