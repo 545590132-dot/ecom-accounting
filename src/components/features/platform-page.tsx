@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { useAppStore } from '@/store';
 import { parseExcelFile, downloadPlatformTemplate, exportToExcel } from '@/lib/excel';
 import { formatCurrency, PLATFORM_CONFIG } from '@/types';
@@ -171,7 +171,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const {
     savedConfigs, activeConfigId, getActiveConfig,
-    updateFieldMapping, updateFormula, updateConfigShopName, availableHeaders, rawOrders, skuMappings, shopNames,
+    updateFieldMapping, updateFieldAlias, updateFormula, updateConfigShopName, availableHeaders, rawOrders, skuMappings, shopNames,
     saveCurrentConfig, switchConfig, deleteConfig, renameConfig,
   } = useAppStore();
   const config = getActiveConfig(platform);
@@ -185,16 +185,18 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const [newConfigName, setNewConfigName] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  // 双击编辑字段别名的状态
+  const [editingAlias, setEditingAlias] = useState<string | null>(null);
+  const [aliasValue, setAliasValue] = useState('');
+  // 当前正在编辑的公式 key
+  const [activeFormulaKey, setActiveFormulaKey] = useState<string | null>(null);
 
-  const fieldLabels: Record<string, string> = {
-    orderNo: '订单号',
-    sku: 'SKU',
-    quantity: '数量',
-    unitPrice: '单价',
-    totalAmount: '订单金额',
-    platformFee: '平台手续费',
-    shippingFee: '运费',
-    orderDate: '订单日期',
+  // 字段 key 列表（用于字段映射区域渲染和公式变量参考）
+  const fieldKeys = ['orderNo', 'sku', 'quantity', 'unitPrice', 'totalAmount', 'platformFee', 'shippingFee', 'orderDate'];
+
+  // 获取字段别名（自定义名称），优先使用 fieldAliases，否则 fallback 到默认中文名
+  const getFieldAlias = (key: string): string => {
+    return config.fieldAliases?.[key] || key;
   };
 
   const formulaLabels: Record<string, string> = {
@@ -202,10 +204,43 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
     profit: '单品利润',
   };
 
-  const formulaDescriptions: Record<string, string> = {
-    netAmount: '可使用变量: totalAmount, platformFee',
-    profit: '可使用变量: netAmount, purchasePrice, quantity, shippingFee',
+  // 双击编辑字段别名的处理
+  const handleStartAliasEdit = (key: string) => {
+    setEditingAlias(key);
+    setAliasValue(getFieldAlias(key));
   };
+
+  const handleConfirmAlias = () => {
+    if (editingAlias && aliasValue.trim()) {
+      updateFieldAlias(platform, editingAlias, aliasValue.trim());
+    }
+    setEditingAlias(null);
+    setAliasValue('');
+  };
+
+  const handleCancelAlias = () => {
+    setEditingAlias(null);
+    setAliasValue('');
+  };
+
+  // 公式中可使用的变量列表（来源于字段映射中已映射的字段 + 系统计算字段）
+  const formulaVariables = useMemo(() => {
+    const vars: { key: string; label: string; mapped: boolean }[] = [];
+    // 来自字段映射的字段（使用自定义别名）
+    for (const key of fieldKeys) {
+      if (config.fieldMapping[key]) {
+        vars.push({
+          key,
+          label: getFieldAlias(key),
+          mapped: true,
+        });
+      }
+    }
+    // 系统计算字段
+    vars.push({ key: 'purchasePrice', label: '采购单价', mapped: true });
+    vars.push({ key: 'netAmount', label: formulaLabels.netAmount, mapped: true });
+    return vars;
+  }, [config.fieldMapping, config.fieldAliases]);
 
   const handleSaveAs = () => {
     const name = newConfigName.trim();
@@ -371,7 +406,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
             <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
           </CardTitle>
           <CardDescription>
-            从导入表格的列头中选择对应的系统字段。「商品名称」由 SKU 映射库自动匹配，「店铺名称」从店铺名称明细中选择。
+            从导入表格的列头中选择对应的系统字段。双击字段名称可自定义命名；「商品名称」由 SKU 映射库自动匹配，「店铺名称」从店铺名称明细中选择。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -427,9 +462,32 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                   </div>
                 )}
               </div>
-              {Object.entries(fieldLabels).map(([key, label]) => (
+              {fieldKeys.map((key) => (
                 <div key={key} className="space-y-1.5">
-                  <label className="text-sm font-medium">{label}</label>
+                  {editingAlias === key ? (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        value={aliasValue}
+                        onChange={(e) => setAliasValue(e.target.value)}
+                        className="h-7 text-sm"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleConfirmAlias();
+                          if (e.key === 'Escape') handleCancelAlias();
+                        }}
+                        onBlur={handleConfirmAlias}
+                      />
+                    </div>
+                  ) : (
+                    <label
+                      className="text-sm font-medium cursor-pointer hover:text-primary group flex items-center gap-1"
+                      onDoubleClick={() => handleStartAliasEdit(key)}
+                      title="双击编辑字段名称"
+                    >
+                      {getFieldAlias(key)}
+                      <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+                    </label>
+                  )}
                   <Select
                     value={config.fieldMapping[key] || '__none__'}
                     onValueChange={(value) => updateFieldMapping(platform, key, value === '__none__' ? '' : value)}
@@ -474,7 +532,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                 <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
               </CardTitle>
               <CardDescription className="mt-1">
-                定义平台手续费和利润的计算方式，基于映射后的字段进行运算。
+                定义平台手续费和利润的计算方式。可用变量来源于字段映射中已映射的字段，点击变量按钮可插入到当前聚焦的公式中。
               </CardDescription>
             </div>
             <Button
@@ -488,13 +546,39 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+            {/* 可用变量参考 — 来源于字段映射中已映射的字段 */}
+            {editingFormula && formulaVariables.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-xs text-muted-foreground">可用变量（点击插入到当前公式）：</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {formulaVariables.map((v) => (
+                    <button
+                      key={v.key}
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-0.5 text-xs font-mono hover:bg-muted transition-colors"
+                      onClick={() => {
+                        if (!activeFormulaKey) return;
+                        const currentExpr = config.formulas[activeFormulaKey as keyof typeof config.formulas] ?? '';
+                        updateFormula(
+                          platform,
+                          activeFormulaKey as keyof typeof config.formulas,
+                          currentExpr + v.key
+                        );
+                      }}
+                      title={`插入变量 ${v.key}（${v.label}）`}
+                    >
+                      <span className="text-primary font-medium">{v.key}</span>
+                      <span className="text-muted-foreground">({v.label})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {Object.entries(formulaLabels).map(([key, label]) => (
               <div key={key} className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">{label}</label>
-                  <span className="text-xs text-muted-foreground">
-                    {formulaDescriptions[key]}
-                  </span>
                 </div>
                 {editingFormula ? (
                   <input
@@ -503,7 +587,8 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                     onChange={(e) =>
                       updateFormula(platform, key as keyof typeof config.formulas, e.target.value)
                     }
-                    placeholder="输入计算表达式"
+                    onFocus={() => setActiveFormulaKey(key)}
+                    placeholder="输入计算表达式，如: totalAmount - platformFee"
                   />
                 ) : (
                   <div className="px-3 py-2 bg-muted rounded-md font-mono text-sm">

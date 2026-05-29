@@ -27,6 +27,18 @@ const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
   orderDate: '',
 };
 
+// 字段默认别名（中文名称）
+const DEFAULT_FIELD_ALIASES: Record<string, string> = {
+  orderNo: '订单号',
+  sku: 'SKU',
+  quantity: '数量',
+  unitPrice: '单价',
+  totalAmount: '订单金额',
+  platformFee: '平台手续费',
+  shippingFee: '运费',
+  orderDate: '订单日期',
+};
+
 const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
   netAmount: 'totalAmount - platformFee',
   profit: 'netAmount - purchasePrice * quantity - shippingFee',
@@ -39,6 +51,7 @@ function createDefaultConfig(platform: Platform): SavedCalcConfig {
     name: '默认方案',
     shopName: '',
     fieldMapping: { ...EMPTY_FIELD_MAPPING },
+    fieldAliases: { ...DEFAULT_FIELD_ALIASES },
     formulas: { ...DEFAULT_FORMULAS },
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -83,6 +96,8 @@ interface AppState {
   updateConfigShopName: (platform: Platform, shopName: string) => void;
   // 更新当前激活配置的字段映射
   updateFieldMapping: (platform: Platform, field: string, value: string) => void;
+  // 更新当前激活配置的字段别名
+  updateFieldAlias: (platform: Platform, field: string, alias: string) => void;
   // 更新当前激活配置的计算公式
   updateFormula: (platform: Platform, formulaKey: keyof CalculationConfig['formulas'], expression: string) => void;
 
@@ -203,6 +218,7 @@ export const useAppStore = create<AppState>()(
             name,
             shopName: activeConfig?.shopName ?? '',
             fieldMapping: activeConfig ? { ...activeConfig.fieldMapping } : { ...EMPTY_FIELD_MAPPING },
+            fieldAliases: activeConfig ? { ...activeConfig.fieldAliases } : { ...DEFAULT_FIELD_ALIASES },
             formulas: activeConfig ? { ...activeConfig.formulas } : { ...DEFAULT_FORMULAS },
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -278,6 +294,25 @@ export const useAppStore = create<AppState>()(
                   ? {
                       ...c,
                       fieldMapping: { ...c.fieldMapping, [field]: value },
+                      updatedAt: Date.now(),
+                    }
+                  : c
+              ),
+            },
+          };
+        }),
+
+      updateFieldAlias: (platform, field, alias) =>
+        set((state) => {
+          const activeId = state.activeConfigId[platform];
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: state.savedConfigs[platform].map((c) =>
+                c.id === activeId
+                  ? {
+                      ...c,
+                      fieldAliases: { ...c.fieldAliases, [field]: alias },
                       updatedAt: Date.now(),
                     }
                   : c
@@ -524,6 +559,7 @@ export const useAppStore = create<AppState>()(
               name: '默认方案',
               shopName: '',
               fieldMapping: { ...cfg.fieldMapping },
+              fieldAliases: { ...DEFAULT_FIELD_ALIASES },
               formulas: { ...cfg.formulas },
               createdAt: Date.now(),
               updatedAt: Date.now(),
@@ -534,7 +570,7 @@ export const useAppStore = create<AppState>()(
           ps.activeConfigId = activeIds;
           delete ps.calculationConfigs;
         }
-        // 为已存在的 savedConfigs 补充 shopName 字段
+        // 为已存在的 savedConfigs 补充 shopName 和 fieldAliases 字段
         if (ps.savedConfigs) {
           const saved = ps.savedConfigs as Record<string, SavedCalcConfig[]>;
           for (const configs of Object.values(saved)) {
@@ -542,12 +578,15 @@ export const useAppStore = create<AppState>()(
               if (cfg.shopName === undefined) {
                 (cfg as unknown as Record<string, unknown>).shopName = '';
               }
+              if (cfg.fieldAliases === undefined) {
+                (cfg as unknown as Record<string, unknown>).fieldAliases = { ...DEFAULT_FIELD_ALIASES };
+              }
             }
           }
         }
         return ps;
       },
-      version: 2,
+      version: 3,
     }
   )
 );
