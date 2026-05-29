@@ -845,7 +845,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
               <DollarSign className="h-3.5 w-3.5" />
-              总销售额
+              ￥总销售额
             </div>
             <div className="text-lg font-bold font-mono">
               {formatCurrency(filteredTotalSales)}

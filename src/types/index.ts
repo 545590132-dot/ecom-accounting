@@ -143,7 +143,7 @@ export const PLATFORM_CONFIG: Record<Platform, { name: string; color: string; bg
 
 // 格式化金额
 export function formatCurrency(value: number): string {
-  return '￥' + value.toLocaleString('zh-CN', {
+  return value.toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }) + '元';

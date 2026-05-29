@@ -130,7 +130,7 @@ export function DashboardOverview() {
         {hasAnyData ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <StatCard
-              title="总销售额"
+              title="￥总销售额"
               value={formatCurrency(totalSales)}
               icon={DollarSign}
             />
