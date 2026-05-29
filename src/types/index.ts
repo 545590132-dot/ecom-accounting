@@ -17,7 +17,6 @@ export interface CalculationConfig {
   fieldMapping: {
     orderNo: string; // 订单号字段名
     sku: string; // SKU 字段名
-    productName: string; // 商品名称字段名
     quantity: string; // 数量字段名
     unitPrice: string; // 单价字段名
     totalAmount: string; // 订单总金额字段名

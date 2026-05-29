@@ -17,7 +17,6 @@ import { generateId } from '@/types';
 const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
   orderNo: '',
   sku: '',
-  productName: '',
   quantity: '',
   unitPrice: '',
   totalAmount: '',
@@ -230,6 +229,7 @@ export const useAppStore = create<AppState>()(
             const sku = getStrValue(mapping.sku);
             const skuInfo = skuMap.find((m) => m.sku === sku);
             const purchasePrice = skuInfo?.purchasePrice ?? 0;
+            const productName = skuInfo?.productName ?? '';
 
             const totalAmount = getNumValue(mapping.totalAmount);
             const platformFee = getNumValue(mapping.platformFee);
@@ -243,7 +243,7 @@ export const useAppStore = create<AppState>()(
               id: generateId(),
               orderNo: getStrValue(mapping.orderNo),
               sku,
-              productName: getStrValue(mapping.productName) || (skuInfo?.productName ?? ''),
+              productName,
               quantity,
               unitPrice: getNumValue(mapping.unitPrice),
               totalAmount,

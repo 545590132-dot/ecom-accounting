@@ -161,7 +161,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
 
 // 平台计算配置组件 — 核心改动：用下拉选择替代手动输入
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
-  const { calculationConfigs, updateFieldMapping, updateFormula, availableHeaders, rawOrders } = useAppStore();
+  const { calculationConfigs, updateFieldMapping, updateFormula, availableHeaders, rawOrders, skuMappings } = useAppStore();
   const config = calculationConfigs[platform];
   const headers = availableHeaders[platform];
   const hasImportedData = rawOrders[platform].length > 0;
@@ -170,7 +170,6 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const fieldLabels: Record<string, string> = {
     orderNo: '订单号',
     sku: 'SKU',
-    productName: '商品名称',
     quantity: '数量',
     unitPrice: '单价',
     totalAmount: '订单金额',
@@ -212,7 +211,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
             字段映射
           </CardTitle>
           <CardDescription>
-            从导入表格的列头中选择对应的系统字段。系统已自动读取表格中的所有列名，请逐一指定映射关系。
+            从导入表格的列头中选择对应的系统字段。「商品名称」由 SKU 映射库自动匹配，无需手动选择。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -222,6 +221,18 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 商品名称 — 来自 SKU 映射，不可选择 */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">商品名称</label>
+                <div className="flex h-9 items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 text-sm">
+                  <Package className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span className="text-slate-500 truncate">
+                    {skuMappings.length > 0
+                      ? `自动从 SKU 映射获取（已录入 ${skuMappings.length} 条）`
+                      : '暂无 SKU 映射数据，请先录入'}
+                  </span>
+                </div>
+              </div>
               {Object.entries(fieldLabels).map(([key, label]) => (
                 <div key={key} className="space-y-1.5">
                   <label className="text-sm font-medium">{label}</label>
