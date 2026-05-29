@@ -4,13 +4,21 @@ import React, { useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store';
 import { parseExcelFile, downloadPlatformTemplate, exportToExcel } from '@/lib/excel';
 import { formatCurrency, PLATFORM_CONFIG } from '@/types';
-import type { Platform, RawOrderData, SkuSummary, PlatformSummary, CalculatedOrder } from '@/types';
+import type { Platform, RawOrderData, SkuSummary, PlatformSummary, CalculatedOrder, SavedCalcConfig } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -21,7 +29,7 @@ import {
 import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
   BarChart3, Package, TrendingUp, TrendingDown, DollarSign,
-  ShoppingCart, Info, AlertCircle,
+  ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X,
 } from 'lucide-react';
 
 // 平台数据导入组件
@@ -159,13 +167,23 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
   );
 }
 
-// 平台计算配置组件 — 核心改动：用下拉选择替代手动输入
+// 平台计算配置组件 — 支持多配置方案存储
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
-  const { calculationConfigs, updateFieldMapping, updateFormula, availableHeaders, rawOrders, skuMappings } = useAppStore();
-  const config = calculationConfigs[platform];
+  const {
+    savedConfigs, activeConfigId, getActiveConfig,
+    updateFieldMapping, updateFormula, availableHeaders, rawOrders, skuMappings,
+    saveCurrentConfig, switchConfig, deleteConfig, renameConfig,
+  } = useAppStore();
+  const config = getActiveConfig(platform);
   const headers = availableHeaders[platform];
   const hasImportedData = rawOrders[platform].length > 0;
+  const configs = savedConfigs[platform];
+  const currentId = activeConfigId[platform];
   const [editingFormula, setEditingFormula] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [newConfigName, setNewConfigName] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const fieldLabels: Record<string, string> = {
     orderNo: '订单号',
@@ -187,6 +205,32 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
     profit: '可使用变量: netAmount, purchasePrice, quantity, shippingFee',
   };
 
+  const handleSaveAs = () => {
+    const name = newConfigName.trim();
+    if (!name) return;
+    saveCurrentConfig(platform, name);
+    setNewConfigName('');
+    setShowSaveDialog(false);
+  };
+
+  const handleStartRename = (c: SavedCalcConfig) => {
+    setRenamingId(c.id);
+    setRenameValue(c.name);
+  };
+
+  const handleConfirmRename = () => {
+    if (renamingId && renameValue.trim()) {
+      renameConfig(platform, renamingId, renameValue.trim());
+    }
+    setRenamingId(null);
+    setRenameValue('');
+  };
+
+  const handleCancelRename = () => {
+    setRenamingId(null);
+    setRenameValue('');
+  };
+
   return (
     <div className="space-y-6">
       {/* 未导入数据提示 */}
@@ -204,11 +248,119 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
         </Card>
       )}
 
+      {/* 配置方案管理 */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Settings2 className="h-4 w-4" />
+            计算方案
+          </CardTitle>
+          <CardDescription>
+            每个平台支持保存多个计算方案，可随时切换。当前方案的修改会实时保存。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {/* 当前方案选择 */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium shrink-0">当前方案：</label>
+              <Select value={currentId} onValueChange={(id) => switchConfig(platform, id)}>
+                <SelectTrigger className="h-9 flex-1 max-w-xs">
+                  <SelectValue placeholder="选择方案..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {configs.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setNewConfigName(''); setShowSaveDialog(true); }}
+                className="shrink-0"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                另存为新方案
+              </Button>
+            </div>
+
+            {/* 已保存的方案列表 */}
+            <div className="space-y-1.5">
+              {configs.map((c) => (
+                <div
+                  key={c.id}
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                    c.id === currentId
+                      ? 'border-primary/30 bg-primary/5 text-foreground'
+                      : 'border-border bg-background text-muted-foreground hover:bg-muted/50'
+                  }`}
+                >
+                  <div className={`h-2 w-2 rounded-full shrink-0 ${c.id === currentId ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
+                  {renamingId === c.id ? (
+                    <div className="flex items-center gap-1 flex-1">
+                      <Input
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        className="h-7 text-sm"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleConfirmRename();
+                          if (e.key === 'Escape') handleCancelRename();
+                        }}
+                      />
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleConfirmRename}>
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleCancelRename}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="flex-1 font-medium truncate">{c.name}</span>
+                      {c.id === currentId && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">使用中</Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground/70 shrink-0">
+                        {new Date(c.updatedAt).toLocaleDateString('zh-CN')}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 shrink-0"
+                        onClick={() => handleStartRename(c)}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      {configs.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive shrink-0"
+                          onClick={() => deleteConfig(platform, c.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 字段映射 */}
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="text-base flex items-center gap-2">
             <Settings2 className="h-4 w-4" />
             字段映射
+            <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
           </CardTitle>
           <CardDescription>
             从导入表格的列头中选择对应的系统字段。「商品名称」由 SKU 映射库自动匹配，无需手动选择。
@@ -269,6 +421,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
         </CardContent>
       </Card>
 
+      {/* 计算公式 */}
       <Card>
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
@@ -276,6 +429,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
               <CardTitle className="text-base flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
                 计算公式
+                <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
               </CardTitle>
               <CardDescription className="mt-1">
                 定义平台手续费和利润的计算方式，基于映射后的字段进行运算。
@@ -319,6 +473,34 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* 另存为新方案弹窗 */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>另存为新方案</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <label className="text-sm font-medium mb-2 block">方案名称</label>
+            <Input
+              value={newConfigName}
+              onChange={(e) => setNewConfigName(e.target.value)}
+              placeholder="输入方案名称，如：含运费利润"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveAs();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveDialog(false)}>取消</Button>
+            <Button onClick={handleSaveAs} disabled={!newConfigName.trim()}>
+              <Save className="h-4 w-4 mr-1" />
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

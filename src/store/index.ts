@@ -6,6 +6,7 @@ import type {
   Platform,
   SkuMapping,
   CalculationConfig,
+  SavedCalcConfig,
   RawOrderData,
   CalculatedOrder,
   PlatformSummary,
@@ -29,6 +30,18 @@ const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
   profit: 'netAmount - purchasePrice * quantity - shippingFee',
 };
 
+// 为每个平台创建默认配置
+function createDefaultConfig(platform: Platform): SavedCalcConfig {
+  return {
+    id: generateId(),
+    name: '默认方案',
+    fieldMapping: { ...EMPTY_FIELD_MAPPING },
+    formulas: { ...DEFAULT_FORMULAS },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+
 interface AppState {
   // SKU 映射库
   skuMappings: SkuMapping[];
@@ -41,9 +54,22 @@ interface AppState {
   // 各平台已导入表格的可用字段（从导入文件的表头自动提取）
   availableHeaders: Record<Platform, string[]>;
 
-  // 计算配置（按平台存储）
-  calculationConfigs: Record<Platform, CalculationConfig>;
+  // 已保存的计算配置（每个平台支持多个方案）
+  savedConfigs: Record<Platform, SavedCalcConfig[]>;
+  activeConfigId: Record<Platform, string>;
+  // 获取当前激活的配置
+  getActiveConfig: (platform: Platform) => SavedCalcConfig;
+  // 保存当前配置（新建或更新）
+  saveCurrentConfig: (platform: Platform, name: string) => void;
+  // 切换到某个已保存的配置
+  switchConfig: (platform: Platform, configId: string) => void;
+  // 删除某个已保存的配置
+  deleteConfig: (platform: Platform, configId: string) => void;
+  // 重命名配置
+  renameConfig: (platform: Platform, configId: string, name: string) => void;
+  // 更新当前激活配置的字段映射
   updateFieldMapping: (platform: Platform, field: string, value: string) => void;
+  // 更新当前激活配置的计算公式
   updateFormula: (platform: Platform, formulaKey: keyof CalculationConfig['formulas'], expression: string) => void;
 
   // 原始订单数据（按平台存储）
@@ -66,6 +92,21 @@ function mergeHeaders(existing: string[], newHeaders: string[]): string[] {
   }
   return Array.from(set);
 }
+
+// 初始化每个平台的默认配置
+function initDefaultConfigs(): { saved: Record<Platform, SavedCalcConfig[]>; activeIds: Record<Platform, string> } {
+  const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
+  const saved: Record<Platform, SavedCalcConfig[]> = { shopee: [], lazada: [], tiktok: [] };
+  const activeIds: Record<Platform, string> = { shopee: '', lazada: '', tiktok: '' };
+  for (const p of platforms) {
+    const defaultCfg = createDefaultConfig(p);
+    saved[p] = [defaultCfg];
+    activeIds[p] = defaultCfg.id;
+  }
+  return { saved, activeIds };
+}
+
+const { saved: initialSavedConfigs, activeIds: initialActiveIds } = initDefaultConfigs();
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -98,50 +139,114 @@ export const useAppStore = create<AppState>()(
       // 可用表头字段（从导入的表格自动收集）
       availableHeaders: { shopee: [], lazada: [], tiktok: [] },
 
-      // 计算配置 — 默认字段映射为空，用户从下拉框选择
-      calculationConfigs: {
-        shopee: {
-          platform: 'shopee',
-          fieldMapping: { ...EMPTY_FIELD_MAPPING },
-          formulas: { ...DEFAULT_FORMULAS },
-        },
-        lazada: {
-          platform: 'lazada',
-          fieldMapping: { ...EMPTY_FIELD_MAPPING },
-          formulas: { ...DEFAULT_FORMULAS },
-        },
-        tiktok: {
-          platform: 'tiktok',
-          fieldMapping: { ...EMPTY_FIELD_MAPPING },
-          formulas: { ...DEFAULT_FORMULAS },
-        },
+      // 已保存的计算配置
+      savedConfigs: initialSavedConfigs,
+      activeConfigId: initialActiveIds,
+
+      getActiveConfig: (platform) => {
+        const state = get();
+        const configs = state.savedConfigs[platform];
+        const activeId = state.activeConfigId[platform];
+        return configs.find((c) => c.id === activeId) ?? configs[0] ?? createDefaultConfig(platform);
       },
+
+      saveCurrentConfig: (platform, name) =>
+        set((state) => {
+          const activeConfig = state.savedConfigs[platform].find(
+            (c) => c.id === state.activeConfigId[platform]
+          );
+          const newConfig: SavedCalcConfig = {
+            id: generateId(),
+            name,
+            fieldMapping: activeConfig ? { ...activeConfig.fieldMapping } : { ...EMPTY_FIELD_MAPPING },
+            formulas: activeConfig ? { ...activeConfig.formulas } : { ...DEFAULT_FORMULAS },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: [...state.savedConfigs[platform], newConfig],
+            },
+            activeConfigId: {
+              ...state.activeConfigId,
+              [platform]: newConfig.id,
+            },
+          };
+        }),
+
+      switchConfig: (platform, configId) =>
+        set((state) => ({
+          activeConfigId: {
+            ...state.activeConfigId,
+            [platform]: configId,
+          },
+        })),
+
+      deleteConfig: (platform, configId) =>
+        set((state) => {
+          const configs = state.savedConfigs[platform];
+          if (configs.length <= 1) return state; // 至少保留一个配置
+          const newConfigs = configs.filter((c) => c.id !== configId);
+          const isActive = state.activeConfigId[platform] === configId;
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: newConfigs,
+            },
+            activeConfigId: isActive
+              ? { ...state.activeConfigId, [platform]: newConfigs[0].id }
+              : state.activeConfigId,
+          };
+        }),
+
+      renameConfig: (platform, configId, name) =>
+        set((state) => ({
+          savedConfigs: {
+            ...state.savedConfigs,
+            [platform]: state.savedConfigs[platform].map((c) =>
+              c.id === configId ? { ...c, name, updatedAt: Date.now() } : c
+            ),
+          },
+        })),
+
       updateFieldMapping: (platform, field, value) =>
-        set((state) => ({
-          calculationConfigs: {
-            ...state.calculationConfigs,
-            [platform]: {
-              ...state.calculationConfigs[platform],
-              fieldMapping: {
-                ...state.calculationConfigs[platform].fieldMapping,
-                [field]: value,
-              },
+        set((state) => {
+          const activeId = state.activeConfigId[platform];
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: state.savedConfigs[platform].map((c) =>
+                c.id === activeId
+                  ? {
+                      ...c,
+                      fieldMapping: { ...c.fieldMapping, [field]: value },
+                      updatedAt: Date.now(),
+                    }
+                  : c
+              ),
             },
-          },
-        })),
+          };
+        }),
+
       updateFormula: (platform, formulaKey, expression) =>
-        set((state) => ({
-          calculationConfigs: {
-            ...state.calculationConfigs,
-            [platform]: {
-              ...state.calculationConfigs[platform],
-              formulas: {
-                ...state.calculationConfigs[platform].formulas,
-                [formulaKey]: expression,
-              },
+        set((state) => {
+          const activeId = state.activeConfigId[platform];
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: state.savedConfigs[platform].map((c) =>
+                c.id === activeId
+                  ? {
+                      ...c,
+                      formulas: { ...c.formulas, [formulaKey]: expression },
+                      updatedAt: Date.now(),
+                    }
+                  : c
+              ),
             },
-          },
-        })),
+          };
+        }),
 
       // 原始订单数据
       rawOrders: { shopee: [], lazada: [], tiktok: [] },
@@ -202,7 +307,7 @@ export const useAppStore = create<AppState>()(
       // 计算方法
       calculateSummary: (platform) => {
         const state = get();
-        const config = state.calculationConfigs[platform];
+        const config = state.getActiveConfig(platform);
         const orders = state.rawOrders[platform];
         const skuMap = state.skuMappings;
 
@@ -327,6 +432,33 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'ecommerce-accounting-store',
+      // 迁移旧数据：将旧的 calculationConfigs 格式转为新的 savedConfigs
+      migrate: (persistedState: unknown, _version: number) => {
+        const ps = persistedState as Record<string, unknown>;
+        // 如果存在旧的 calculationConfigs 但没有 savedConfigs，执行迁移
+        if (ps.calculationConfigs && !ps.savedConfigs) {
+          const oldConfigs = ps.calculationConfigs as Record<string, { platform: string; fieldMapping: CalculationConfig['fieldMapping']; formulas: CalculationConfig['formulas'] }>;
+          const saved: Record<string, SavedCalcConfig[]> = {};
+          const activeIds: Record<string, string> = {};
+          for (const [platform, cfg] of Object.entries(oldConfigs)) {
+            const id = generateId();
+            saved[platform] = [{
+              id,
+              name: '默认方案',
+              fieldMapping: { ...cfg.fieldMapping },
+              formulas: { ...cfg.formulas },
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            }];
+            activeIds[platform] = id;
+          }
+          ps.savedConfigs = saved;
+          ps.activeConfigId = activeIds;
+          delete ps.calculationConfigs;
+        }
+        return ps;
+      },
+      version: 1,
     }
   )
 );

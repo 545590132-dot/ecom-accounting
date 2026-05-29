@@ -31,6 +31,16 @@ export interface CalculationConfig {
   };
 }
 
+// 已保存的计算配置（支持每个平台存储多个方案）
+export interface SavedCalcConfig {
+  id: string;
+  name: string; // 配置名称，如"默认方案"、"含运费利润"
+  fieldMapping: CalculationConfig['fieldMapping'];
+  formulas: CalculationConfig['formulas'];
+  createdAt: number;
+  updatedAt: number;
+}
+
 // 导入的原始订单数据
 export interface RawOrderData {
   id: string;
