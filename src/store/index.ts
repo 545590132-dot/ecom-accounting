@@ -408,13 +408,31 @@ export const useAppStore = create<AppState>()(
         // 安全执行公式表达式
         const evalFormula = (expression: string, context: Record<string, number>): number => {
           if (!expression || !expression.trim()) return 0;
+          const contextKeys = Object.keys(context);
+          const trimmedExpr = expression.trim();
+          // 检测自引用公式（如 totalAmount 公式内容为 'totalAmount'），会导致 ReferenceError
+          if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(trimmedExpr) && !contextKeys.includes(trimmedExpr)) {
+            console.warn('[公式自引用或未定义变量]', trimmedExpr);
+            return 0;
+          }
           try {
+            // 自动将中文标点转换为英文标点，防止 SyntaxError
+            const normalizedExpr = trimmedExpr
+              .replace(/（/g, '(')
+              .replace(/）/g, ')')
+              .replace(/＋/g, '+')
+              .replace(/－/g, '-')
+              .replace(/×/g, '*')
+              .replace(/÷/g, '/')
+              .replace(/，/g, ',');
             const keys = Object.keys(context);
             const values = Object.values(context);
-            const fn = new Function(...keys, `"use strict"; return (${expression});`);
+            const fn = new Function(...keys, `"use strict"; return (${normalizedExpr});`);
             const result = fn(...values);
-            return typeof result === 'number' && isFinite(result) ? result : 0;
-          } catch {
+            if (typeof result !== 'number' || !isFinite(result)) return 0;
+            return result;
+          } catch (e) {
+            console.warn('[公式计算失败]', expression, context, e);
             return 0;
           }
         };
@@ -621,20 +639,29 @@ export const useAppStore = create<AppState>()(
               if (cfg.fieldAliases === undefined) {
                 (cfg as unknown as Record<string, unknown>).fieldAliases = { ...DEFAULT_FIELD_ALIASES };
               }
+              // 补充字段映射中缺失的新字段
+              const fm = (cfg as unknown as { fieldMapping: Record<string, string> }).fieldMapping;
+              if (fm && fm.platformDiscount === undefined) {
+                fm.platformDiscount = '';
+              }
               // 补充新公式字段：totalAmount 和 profitRate
               const formulas = (cfg as unknown as { formulas: Record<string, string> }).formulas;
               if (formulas && formulas.totalAmount === undefined) {
-                formulas.totalAmount = 'totalAmount';
+                formulas.totalAmount = '(unitPrice + platformDiscount) * 1.7';
               }
               if (formulas && formulas.profitRate === undefined) {
                 formulas.profitRate = 'totalAmount > 0 ? profit / totalAmount * 100 : 0';
+              }
+              // 修复旧迁移中 totalAmount 自引用问题
+              if (formulas && formulas.totalAmount === 'totalAmount') {
+                formulas.totalAmount = '(unitPrice + platformDiscount) * 1.7';
               }
             }
           }
         }
         return ps;
       },
-      version: 4,
+      version: 5,
     }
   )
 );
