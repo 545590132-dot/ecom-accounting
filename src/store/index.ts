@@ -24,7 +24,6 @@ const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
   totalAmount: '',
   platformFee: '',
   shippingFee: '',
-  shopName: '',
   orderDate: '',
 };
 
@@ -376,7 +375,8 @@ export const useAppStore = create<AppState>()(
             const skuInfo = skuMap.find((m) => m.sku === sku);
             const purchasePrice = skuInfo?.purchasePrice ?? 0;
             const productName = skuInfo?.productName ?? '';
-            const shopName = getStrValue(mapping.shopName);
+            // 店铺名称：优先使用导入时指定的店铺名称，否则尝试从表格字段读取
+            const shopName = orderFile.shopName || getStrValue(mapping.shopName);
             // 尝试从日期字段中提取年月
             const rawDate = getStrValue(mapping.orderDate);
             let orderDate = '';

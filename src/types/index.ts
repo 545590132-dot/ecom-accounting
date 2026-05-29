@@ -30,7 +30,6 @@ export interface CalculationConfig {
     totalAmount: string; // 订单总金额字段名
     platformFee: string; // 平台手续费字段名
     shippingFee: string; // 运费字段名
-    shopName: string; // 店铺名称字段名
     orderDate: string; // 订单日期字段名
     [key: string]: string; // 允许自定义扩展字段
   };
@@ -59,6 +58,7 @@ export interface RawOrderData {
   importTime: number;
   headers: string[]; // 表头字段
   rows: Record<string, string | number>[]; // 原始行数据
+  shopName?: string; // 导入时指定的店铺名称
 }
 
 // 计算后的统计结果 - 单条订单

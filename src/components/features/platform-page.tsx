@@ -29,15 +29,17 @@ import {
 import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
   BarChart3, Package, TrendingUp, TrendingDown, DollarSign,
-  ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X,
+  ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X, Store,
 } from 'lucide-react';
 
 // 平台数据导入组件
 function PlatformDataImport({ platform }: { platform: Platform }) {
-  const { rawOrders, importOrders, deleteOrderFile, clearOrders } = useAppStore();
+  const { rawOrders, importOrders, deleteOrderFile, clearOrders, shopNames } = useAppStore();
   const platformOrders = rawOrders[platform];
+  const platformShopNames = shopNames.filter((s) => s.platform === platform);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [selectedShopName, setSelectedShopName] = useState('');
   const config = PLATFORM_CONFIG[platform];
 
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,6 +54,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
         fileName: file.name,
         headers,
         rows,
+        shopName: selectedShopName || undefined,
       });
     } catch (err) {
       console.error('导入失败:', err);
@@ -59,7 +62,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, [platform, importOrders]);
+  }, [platform, importOrders, selectedShopName]);
 
   const totalRows = platformOrders.reduce((sum: number, o: RawOrderData) => sum + o.rows.length, 0);
 
@@ -67,7 +70,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
     <div className="space-y-4">
       {/* 操作栏 */}
       <div className="flex flex-wrap gap-2 items-center justify-between">
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <input
             ref={fileInputRef}
             type="file"
@@ -89,6 +92,25 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
             <Download className="h-4 w-4 mr-1.5" />
             下载导入模板
           </Button>
+          {/* 店铺名称选择 */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm text-muted-foreground shrink-0">归属店铺：</span>
+            <Select value={selectedShopName} onValueChange={setSelectedShopName}>
+              <SelectTrigger className="h-8 w-40">
+                <SelectValue placeholder="选择店铺..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">
+                  <span className="text-muted-foreground">— 不指定 —</span>
+                </SelectItem>
+                {platformShopNames.map((s) => (
+                  <SelectItem key={s.id} value={s.name}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         {platformOrders.length > 0 && (
           <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => clearOrders(platform)}>
@@ -104,7 +126,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
             <Info className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
             <div className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">使用说明：</span>
-              请直接上传从 {config.name} 平台导出的订单表格。导入后，系统会自动读取表格的列头字段，
+              请直接上传从 {config.name} 平台导出的订单表格。导入前可先选择「归属店铺」，系统将自动关联店铺名称。导入后，系统会自动读取表格的列头字段，
               你可以在「计算配置」标签页中选择各字段对应的列名。也可点击「下载导入模板」获取参考格式。
             </div>
           </div>
@@ -134,6 +156,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
                       <div className="font-medium text-sm">{order.fileName}</div>
                       <div className="text-xs text-muted-foreground">
                         {order.rows.length} 条记录 · {order.headers.length} 个字段 · {new Date(order.importTime).toLocaleString('zh-CN')}
+                        {order.shopName && <span className="ml-1">· 店铺：<span className="font-medium text-foreground">{order.shopName}</span></span>}
                       </div>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {order.headers.slice(0, 8).map((h) => (
@@ -171,7 +194,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const {
     savedConfigs, activeConfigId, getActiveConfig,
-    updateFieldMapping, updateFormula, availableHeaders, rawOrders, skuMappings,
+    updateFieldMapping, updateFormula, availableHeaders, rawOrders, skuMappings, shopNames,
     saveCurrentConfig, switchConfig, deleteConfig, renameConfig,
   } = useAppStore();
   const config = getActiveConfig(platform);
@@ -179,6 +202,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const hasImportedData = rawOrders[platform].length > 0;
   const configs = savedConfigs[platform];
   const currentId = activeConfigId[platform];
+  const platformShopNames = shopNames.filter((s) => s.platform === platform);
   const [editingFormula, setEditingFormula] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newConfigName, setNewConfigName] = useState('');
@@ -193,7 +217,6 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
     totalAmount: '订单金额',
     platformFee: '平台手续费',
     shippingFee: '运费',
-    shopName: '店铺名称',
     orderDate: '订单日期',
   };
 
@@ -365,7 +388,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
             <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
           </CardTitle>
           <CardDescription>
-            从导入表格的列头中选择对应的系统字段。「商品名称」由 SKU 映射库自动匹配，无需手动选择。
+            从导入表格的列头中选择对应的系统字段。「商品名称」由 SKU 映射库自动匹配，「店铺名称」由店铺名称明细自动匹配，无需手动选择。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -384,6 +407,18 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                     {skuMappings.length > 0
                       ? `自动从 SKU 映射获取（已录入 ${skuMappings.length} 条）`
                       : '暂无 SKU 映射数据，请先录入'}
+                  </span>
+                </div>
+              </div>
+              {/* 店铺名称 — 来自店铺名称明细，不可选择 */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">店铺名称</label>
+                <div className="flex h-9 items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 text-sm">
+                  <Store className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span className="text-slate-500 truncate">
+                    {platformShopNames.length > 0
+                      ? `自动从店铺名称明细获取（已配置 ${platformShopNames.length} 个）`
+                      : '暂无店铺名称，请先在「店铺名称明细」中配置'}
                   </span>
                 </div>
               </div>
