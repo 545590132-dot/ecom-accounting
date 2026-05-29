@@ -40,8 +40,10 @@ const DEFAULT_FIELD_ALIASES: Record<string, string> = {
 };
 
 const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
+  totalAmount: 'totalAmount', // 默认直接使用字段映射的 totalAmount 值
   netAmount: 'totalAmount - platformFee',
   profit: 'netAmount - purchasePrice * quantity - shippingFee',
+  profitRate: 'totalAmount > 0 ? profit / totalAmount * 100 : 0',
 };
 
 // 为每个平台创建默认配置
@@ -405,6 +407,20 @@ export const useAppStore = create<AppState>()(
 
         const calculatedOrders: CalculatedOrder[] = [];
 
+        // 安全执行公式表达式
+        const evalFormula = (expression: string, context: Record<string, number>): number => {
+          if (!expression || !expression.trim()) return 0;
+          try {
+            const keys = Object.keys(context);
+            const values = Object.values(context);
+            const fn = new Function(...keys, `"use strict"; return (${expression});`);
+            const result = fn(...values);
+            return typeof result === 'number' && isFinite(result) ? result : 0;
+          } catch {
+            return 0;
+          }
+        };
+
         for (const orderFile of orders) {
           for (const row of orderFile.rows) {
             const mapping = config.fieldMapping;
@@ -437,7 +453,6 @@ export const useAppStore = create<AppState>()(
               if (dateMatch) {
                 orderDate = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}`;
               } else {
-                // 尝试解析完整日期
                 const d = new Date(rawDate);
                 if (!isNaN(d.getTime())) {
                   orderDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -445,13 +460,37 @@ export const useAppStore = create<AppState>()(
               }
             }
 
-            const totalAmount = getNumValue(mapping.totalAmount);
+            // 从字段映射中获取原始数值
+            const rawTotalAmount = getNumValue(mapping.totalAmount);
             const platformFee = getNumValue(mapping.platformFee);
             const shippingFee = getNumValue(mapping.shippingFee);
             const quantity = getNumValue(mapping.quantity);
+            const unitPrice = getNumValue(mapping.unitPrice);
 
-            const netAmount = totalAmount - platformFee;
-            const profit = netAmount - purchasePrice * quantity - shippingFee;
+            // 构建公式上下文：字段映射值 + 采购单价
+            const formulaContext: Record<string, number> = {
+              orderNo: 0, // 订单号不是数值，但在公式中不需要
+              sku: 0,
+              quantity,
+              unitPrice,
+              totalAmount: rawTotalAmount, // 字段映射的原始值，公式可引用或重写
+              platformFee,
+              shippingFee,
+              orderDate: 0,
+              purchasePrice,
+            };
+
+            // 按顺序计算公式：totalAmount → netAmount → profit → profitRate
+            const computedTotalAmount = evalFormula(config.formulas.totalAmount, formulaContext);
+            formulaContext.totalAmount = computedTotalAmount;
+
+            const netAmount = evalFormula(config.formulas.netAmount, formulaContext);
+            formulaContext.netAmount = netAmount;
+
+            const profit = evalFormula(config.formulas.profit, formulaContext);
+            formulaContext.profit = profit;
+
+            const profitRate = evalFormula(config.formulas.profitRate, formulaContext);
 
             calculatedOrders.push({
               id: generateId(),
@@ -461,13 +500,14 @@ export const useAppStore = create<AppState>()(
               shopName,
               orderDate,
               quantity,
-              unitPrice: getNumValue(mapping.unitPrice),
-              totalAmount,
+              unitPrice,
+              totalAmount: computedTotalAmount,
               platformFee,
               shippingFee,
               netAmount,
               purchasePrice,
               profit,
+              profitRate,
               rawRow: row,
             });
           }
@@ -480,6 +520,7 @@ export const useAppStore = create<AppState>()(
         const totalNetAmount = calculatedOrders.reduce((s, o) => s + o.netAmount, 0);
         const totalPurchaseCost = calculatedOrders.reduce((s, o) => s + o.purchasePrice * o.quantity, 0);
         const totalProfit = calculatedOrders.reduce((s, o) => s + o.profit, 0);
+        const totalProfitRate = totalSales > 0 ? totalProfit / totalSales * 100 : 0;
 
         return {
           platform,
@@ -490,6 +531,7 @@ export const useAppStore = create<AppState>()(
           totalNetAmount,
           totalPurchaseCost,
           totalProfit,
+          totalProfitRate,
           orders: calculatedOrders,
         };
       },
@@ -498,9 +540,9 @@ export const useAppStore = create<AppState>()(
         const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
         const state = get();
         const result: Record<Platform, PlatformSummary> = {
-          shopee: { platform: 'shopee', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, orders: [] },
-          lazada: { platform: 'lazada', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, orders: [] },
-          tiktok: { platform: 'tiktok', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, orders: [] },
+          shopee: { platform: 'shopee', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, orders: [] },
+          lazada: { platform: 'lazada', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, orders: [] },
+          tiktok: { platform: 'tiktok', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, orders: [] },
         };
         for (const p of platforms) {
           result[p] = state.calculateSummary(p);
@@ -522,10 +564,12 @@ export const useAppStore = create<AppState>()(
               purchasePrice: order.purchasePrice,
               totalQuantity: 0,
               totalSales: 0,
+              avgUnitPrice: 0,
               totalPlatformFee: 0,
               totalNetAmount: 0,
               totalPurchaseCost: 0,
               totalProfit: 0,
+              profitRate: 0,
               orderCount: 0,
             });
           }
@@ -537,6 +581,12 @@ export const useAppStore = create<AppState>()(
           s.totalPurchaseCost += order.purchasePrice * order.quantity;
           s.totalProfit += order.profit;
           s.orderCount += 1;
+        }
+
+        // 计算平均单价和利润率
+        for (const s of skuMap.values()) {
+          s.avgUnitPrice = s.totalQuantity > 0 ? s.totalSales / s.totalQuantity : 0;
+          s.profitRate = s.totalSales > 0 ? s.totalProfit / s.totalSales * 100 : 0;
         }
 
         return Array.from(skuMap.values());
@@ -570,7 +620,7 @@ export const useAppStore = create<AppState>()(
           ps.activeConfigId = activeIds;
           delete ps.calculationConfigs;
         }
-        // 为已存在的 savedConfigs 补充 shopName 和 fieldAliases 字段
+        // 为已存在的 savedConfigs 补充缺失字段
         if (ps.savedConfigs) {
           const saved = ps.savedConfigs as Record<string, SavedCalcConfig[]>;
           for (const configs of Object.values(saved)) {
@@ -581,12 +631,20 @@ export const useAppStore = create<AppState>()(
               if (cfg.fieldAliases === undefined) {
                 (cfg as unknown as Record<string, unknown>).fieldAliases = { ...DEFAULT_FIELD_ALIASES };
               }
+              // 补充新公式字段：totalAmount 和 profitRate
+              const formulas = (cfg as unknown as { formulas: Record<string, string> }).formulas;
+              if (formulas && formulas.totalAmount === undefined) {
+                formulas.totalAmount = 'totalAmount';
+              }
+              if (formulas && formulas.profitRate === undefined) {
+                formulas.profitRate = 'totalAmount > 0 ? profit / totalAmount * 100 : 0';
+              }
             }
           }
         }
         return ps;
       },
-      version: 3,
+      version: 4,
     }
   )
 );

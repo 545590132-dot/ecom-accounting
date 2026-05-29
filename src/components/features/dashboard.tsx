@@ -114,6 +114,7 @@ export function DashboardOverview() {
   const totalOrders = platforms.reduce((s, p) => s + summaries[p].totalOrders, 0);
   const totalQuantity = platforms.reduce((s, p) => s + summaries[p].totalQuantity, 0);
   const totalProfit = platforms.reduce((s, p) => s + summaries[p].totalProfit, 0);
+  const totalProfitRate = totalSales > 0 ? totalProfit / totalSales * 100 : 0;
   const totalPlatformFee = platforms.reduce((s, p) => s + summaries[p].totalPlatformFee, 0);
   const totalNetAmount = platforms.reduce((s, p) => s + summaries[p].totalNetAmount, 0);
   const hasAnyData = platforms.some((p) => summaries[p].orders.length > 0);
@@ -159,7 +160,7 @@ export function DashboardOverview() {
               value={formatCurrency(totalProfit)}
               icon={totalProfit >= 0 ? TrendingUp : TrendingDown}
               color={totalProfit >= 0 ? '#10b981' : '#ef4444'}
-              subtitle={totalSales > 0 ? `利润率 ${(totalProfit / totalSales * 100).toFixed(1)}%` : undefined}
+              subtitle={`利润率 ${totalProfitRate.toFixed(1)}%`}
             />
           </div>
         ) : (

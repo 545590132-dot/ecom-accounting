@@ -200,8 +200,10 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   };
 
   const formulaLabels: Record<string, string> = {
+    totalAmount: '总金额',
     netAmount: '扣除手续费后金额',
     profit: '单品利润',
+    profitRate: '利润率(%)',
   };
 
   // 双击编辑字段别名的处理
@@ -236,9 +238,11 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
         });
       }
     }
-    // 系统计算字段
-    vars.push({ key: 'purchasePrice', label: '采购单价', mapped: true });
-    vars.push({ key: 'netAmount', label: formulaLabels.netAmount, mapped: true });
+    // 系统计算字段（来自 SKU 映射和公式链式计算结果）
+    vars.push({ key: 'purchasePrice', label: '采购单价（来自SKU映射）', mapped: true });
+    vars.push({ key: 'totalAmount', label: formulaLabels.totalAmount + '（公式计算结果）', mapped: true });
+    vars.push({ key: 'netAmount', label: formulaLabels.netAmount + '（公式计算结果）', mapped: true });
+    vars.push({ key: 'profit', label: formulaLabels.profit + '（公式计算结果）', mapped: true });
     return vars;
   }, [config.fieldMapping, config.fieldAliases]);
 
@@ -532,7 +536,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                 <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
               </CardTitle>
               <CardDescription className="mt-1">
-                定义平台手续费和利润的计算方式。可用变量来源于字段映射中已映射的字段，点击变量按钮可插入到当前聚焦的公式中。
+                定义各计算指标的计算方式。可用变量来源于字段映射和 SKU 映射。公式按顺序执行：总金额 → 扣除手续费后金额 → 利润 → 利润率，后面的公式可引用前面的计算结果。点击变量按钮可插入到当前聚焦的公式中。
               </CardDescription>
             </div>
             <Button
@@ -670,10 +674,12 @@ function PlatformStats({ platform }: { platform: Platform }) {
           purchasePrice: order.purchasePrice,
           totalQuantity: 0,
           totalSales: 0,
+          avgUnitPrice: 0,
           totalPlatformFee: 0,
           totalNetAmount: 0,
           totalPurchaseCost: 0,
           totalProfit: 0,
+          profitRate: 0,
           orderCount: 0,
         });
       }
@@ -686,6 +692,11 @@ function PlatformStats({ platform }: { platform: Platform }) {
       s.totalProfit += order.profit;
       s.orderCount += 1;
     }
+    // 计算平均单价和利润率
+    for (const s of map.values()) {
+      s.avgUnitPrice = s.totalQuantity > 0 ? s.totalSales / s.totalQuantity : 0;
+      s.profitRate = s.totalSales > 0 ? s.totalProfit / s.totalSales * 100 : 0;
+    }
     return Array.from(map.values());
   })();
 
@@ -697,6 +708,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   const filteredTotalNetAmount = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.netAmount, 0);
   const filteredTotalPurchaseCost = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.purchasePrice * o.quantity, 0);
   const filteredTotalProfit = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.profit, 0);
+  const filteredTotalProfitRate = filteredTotalSales > 0 ? filteredTotalProfit / filteredTotalSales * 100 : 0;
 
   const hasData = summary.orders.length > 0;
 
@@ -841,8 +853,8 @@ function PlatformStats({ platform }: { platform: Platform }) {
         </div>
         <div className="text-sm">
           <span className="text-muted-foreground">利润率: </span>
-          <span className="font-medium font-mono" style={{ color: filteredTotalSales > 0 ? (filteredTotalProfit / filteredTotalSales * 100 >= 0 ? '#10b981' : '#ef4444') : 'inherit' }}>
-            {filteredTotalSales > 0 ? (filteredTotalProfit / filteredTotalSales * 100).toFixed(1) : '0.0'}%
+          <span className="font-medium font-mono" style={{ color: filteredTotalProfitRate >= 0 ? '#10b981' : '#ef4444' }}>
+            {filteredTotalProfitRate.toFixed(1)}%
           </span>
         </div>
       </div>
@@ -873,17 +885,16 @@ function PlatformStats({ platform }: { platform: Platform }) {
           onClick={() => {
             const data = viewMode === 'sku'
               ? filteredSkuSummaries.map((s: SkuSummary) => ({
-                  SKU: s.sku,
                   商品名称: s.productName,
+                  SKU: s.sku,
                   店铺名称: s.shopName,
+                  销量: s.totalQuantity,
+                  总价: s.totalSales,
+                  平均单价: s.avgUnitPrice,
                   采购单价: s.purchasePrice,
-                  总销量: s.totalQuantity,
-                  总销售额: s.totalSales,
-                  总手续费: s.totalPlatformFee,
-                  扣费后金额: s.totalNetAmount,
-                  总采购成本: s.totalPurchaseCost,
-                  总利润: s.totalProfit,
-                  订单数: s.orderCount,
+                  采购成本: s.totalPurchaseCost,
+                  利润: s.totalProfit,
+                  利润率: `${s.profitRate.toFixed(1)}%`,
                 }))
               : filteredOrders.map((o: CalculatedOrder) => ({
                   订单号: o.orderNo,
@@ -899,6 +910,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
                   扣费后金额: o.netAmount,
                   采购单价: o.purchasePrice,
                   利润: o.profit,
+                  利润率: `${o.profitRate.toFixed(1)}%`,
                 }));
             exportToExcel(data, `${platformConfig.name}_${viewMode === 'sku' ? 'SKU汇总' : '订单明细'}`);
           }}
@@ -927,32 +939,34 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[140px]">SKU</TableHead>
                 <TableHead>商品名称</TableHead>
-                <TableHead className="w-[120px]">店铺名称</TableHead>
-                <TableHead className="w-[100px] text-right">采购单价</TableHead>
+                <TableHead className="w-[120px]">SKU</TableHead>
+                <TableHead className="w-[100px]">店铺名称</TableHead>
                 <TableHead className="w-[80px] text-right">销量</TableHead>
-                <TableHead className="w-[120px] text-right">销售额</TableHead>
-                <TableHead className="w-[120px] text-right">手续费</TableHead>
-                <TableHead className="w-[120px] text-right">扣费后金额</TableHead>
+                <TableHead className="w-[120px] text-right">总价</TableHead>
+                <TableHead className="w-[100px] text-right">平均单价</TableHead>
+                <TableHead className="w-[100px] text-right">采购单价</TableHead>
                 <TableHead className="w-[120px] text-right">采购成本</TableHead>
                 <TableHead className="w-[120px] text-right">利润</TableHead>
+                <TableHead className="w-[80px] text-right">利润率</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {summaries.map((s) => (
                 <TableRow key={`${s.sku}-${s.shopName}`}>
-                  <TableCell className="font-mono text-sm">{s.sku}</TableCell>
-                  <TableCell>{s.productName || '-'}</TableCell>
+                  <TableCell className="font-medium">{s.productName || '-'}</TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground">{s.sku}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(s.purchasePrice)}</TableCell>
                   <TableCell className="text-right font-mono">{s.totalQuantity}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.totalSales)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(s.totalPlatformFee)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(s.totalNetAmount)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(s.avgUnitPrice)}</TableCell>
+                  <TableCell className="text-right font-mono">{formatCurrency(s.purchasePrice)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.totalPurchaseCost)}</TableCell>
                   <TableCell className="text-right font-mono" style={{ color: s.totalProfit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(s.totalProfit)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono" style={{ color: s.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
+                    {s.profitRate.toFixed(1)}%
                   </TableCell>
                 </TableRow>
               ))}
@@ -986,6 +1000,7 @@ function OrderDetailTable({ orders }: { orders: CalculatedOrder[] }) {
                 <TableHead className="w-[110px] text-right">扣费后金额</TableHead>
                 <TableHead className="w-[100px] text-right">采购单价</TableHead>
                 <TableHead className="w-[100px] text-right">利润</TableHead>
+                <TableHead className="w-[80px] text-right">利润率</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1005,6 +1020,9 @@ function OrderDetailTable({ orders }: { orders: CalculatedOrder[] }) {
                   <TableCell className="text-right font-mono">{formatCurrency(order.purchasePrice)}</TableCell>
                   <TableCell className="text-right font-mono" style={{ color: order.profit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(order.profit)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono" style={{ color: order.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
+                    {order.profitRate.toFixed(1)}%
                   </TableCell>
                 </TableRow>
               ))}
