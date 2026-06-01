@@ -7,8 +7,8 @@ import type { Platform, PlatformSummary } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import {
-  DollarSign, ShoppingCart, Package, TrendingUp, TrendingDown,
-  BarChart3,
+  ShoppingCart, Package, TrendingUp, TrendingDown,
+  BarChart3, CircleDollarSign,
 } from 'lucide-react';
 
 function StatCard({
@@ -130,9 +130,9 @@ export function DashboardOverview() {
         {hasAnyData ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <StatCard
-              title="￥总销售额"
+              title="总销售额"
               value={formatCurrency(totalSales)}
-              icon={DollarSign}
+              icon={CircleDollarSign}
             />
             <StatCard
               title="总订单数"
@@ -153,7 +153,7 @@ export function DashboardOverview() {
             <StatCard
               title="扣费后金额"
               value={formatCurrency(totalNetAmount)}
-              icon={DollarSign}
+              icon={CircleDollarSign}
             />
             <StatCard
               title="总利润"

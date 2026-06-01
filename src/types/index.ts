@@ -48,7 +48,6 @@ export interface CalculationConfig {
 export interface SavedCalcConfig {
   id: string;
   name: string; // 配置名称，如"默认方案"、"含运费利润"
-  shopName: string; // 关联的店铺名称，从店铺名称明细中选择
   fieldMapping: CalculationConfig['fieldMapping'];
   fieldAliases: Record<string, string>; // 字段别名，用户自定义的字段名称，如 { orderNo: '订单编号', sku: '商品编码' }
   formulas: CalculationConfig['formulas'];
@@ -66,6 +65,7 @@ export interface RawOrderData {
   rows: Record<string, string | number>[]; // 原始行数据
   shopName?: string; // 导入时指定的店铺名称
   yearMonth?: string; // 用户自定义的年月（格式：2025-01）
+  configId?: string; // 导入时关联的计算方案ID
 }
 
 // 计算后的统计结果 - 单条订单

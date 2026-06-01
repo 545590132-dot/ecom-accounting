@@ -49,7 +49,6 @@ function createDefaultConfig(platform: Platform): SavedCalcConfig {
   return {
     id: generateId(),
     name: '默认方案',
-    shopName: '',
     fieldMapping: { ...EMPTY_FIELD_MAPPING },
     fieldAliases: { ...DEFAULT_FIELD_ALIASES },
     formulas: { ...DEFAULT_FORMULAS },
@@ -92,8 +91,6 @@ interface AppState {
   deleteConfig: (platform: Platform, configId: string) => void;
   // 重命名配置
   renameConfig: (platform: Platform, configId: string, name: string) => void;
-  // 更新当前激活配置的店铺名称
-  updateConfigShopName: (platform: Platform, shopName: string) => void;
   // 更新当前激活配置的字段映射
   updateFieldMapping: (platform: Platform, field: string, value: string) => void;
   // 更新当前激活配置的字段别名
@@ -216,7 +213,6 @@ export const useAppStore = create<AppState>()(
           const newConfig: SavedCalcConfig = {
             id: generateId(),
             name,
-            shopName: activeConfig?.shopName ?? '',
             fieldMapping: activeConfig ? { ...activeConfig.fieldMapping } : { ...EMPTY_FIELD_MAPPING },
             fieldAliases: activeConfig ? { ...activeConfig.fieldAliases } : { ...DEFAULT_FIELD_ALIASES },
             formulas: activeConfig ? { ...activeConfig.formulas } : { ...DEFAULT_FORMULAS },
@@ -270,18 +266,6 @@ export const useAppStore = create<AppState>()(
           },
         })),
 
-      updateConfigShopName: (platform, shopName) =>
-        set((state) => {
-          const activeId = state.activeConfigId[platform];
-          return {
-            savedConfigs: {
-              ...state.savedConfigs,
-              [platform]: state.savedConfigs[platform].map((c) =>
-                c.id === activeId ? { ...c, shopName, updatedAt: Date.now() } : c
-              ),
-            },
-          };
-        }),
 
       updateFieldMapping: (platform, field, value) =>
         set((state) => {
@@ -399,7 +383,7 @@ export const useAppStore = create<AppState>()(
       // 计算方法
       calculateSummary: (platform) => {
         const state = get();
-        const config = state.getActiveConfig(platform);
+        const activeConfig = state.getActiveConfig(platform);
         const orders = state.rawOrders[platform];
         const skuMap = state.skuMappings;
 
@@ -438,8 +422,13 @@ export const useAppStore = create<AppState>()(
         };
 
         for (const orderFile of orders) {
+          // 优先使用文件关联的计算方案，否则使用当前激活方案
+          const config = orderFile.configId
+            ? (state.savedConfigs[platform] || []).find((c: SavedCalcConfig) => c.id === orderFile.configId) || activeConfig
+            : activeConfig;
+          const mapping = config.fieldMapping;
+
           for (const row of orderFile.rows) {
-            const mapping = config.fieldMapping;
 
             const getNumValue = (fieldName: string): number => {
               if (!fieldName) return 0;
@@ -460,9 +449,9 @@ export const useAppStore = create<AppState>()(
             const purchasePrice = skuInfo?.purchasePrice ?? 0;
             // SKU 无法匹配出商品名称时，直接使用 SKU 作为商品名称
             const productName = skuInfo?.productName || sku;
-            // 店铺名称：优先使用计算配置中选择的店铺名称，否则使用导入时指定的店铺名称
-            const shopName = config.shopName || orderFile.shopName || '';
-            // 年月：优先使用用户导入时自定义的年月
+            // 店铺名称：使用导入时关联的店铺名称
+            const shopName = orderFile.shopName || '';
+            // 年月：使用导入时自定义的年月
             const orderDate = orderFile.yearMonth || '';
 
             // 从字段映射中获取原始数值
@@ -617,7 +606,6 @@ export const useAppStore = create<AppState>()(
             saved[platform] = [{
               id,
               name: '默认方案',
-              shopName: '',
               fieldMapping: { ...cfg.fieldMapping },
               fieldAliases: { ...DEFAULT_FIELD_ALIASES },
               formulas: { ...cfg.formulas },
@@ -635,9 +623,6 @@ export const useAppStore = create<AppState>()(
           const saved = ps.savedConfigs as Record<string, SavedCalcConfig[]>;
           for (const configs of Object.values(saved)) {
             for (const cfg of configs) {
-              if (cfg.shopName === undefined) {
-                (cfg as unknown as Record<string, unknown>).shopName = '';
-              }
               if (cfg.fieldAliases === undefined) {
                 (cfg as unknown as Record<string, unknown>).fieldAliases = { ...DEFAULT_FIELD_ALIASES };
               }

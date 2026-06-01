@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { useAppStore } from '@/store';
 import { parseExcelFile, downloadPlatformTemplate, exportToExcel } from '@/lib/excel';
 import { formatCurrency, PLATFORM_CONFIG } from '@/types';
-import type { Platform, RawOrderData, SkuSummary, PlatformSummary, CalculatedOrder, SavedCalcConfig } from '@/types';
+import type { Platform, RawOrderData, SkuSummary, PlatformSummary, CalculatedOrder, SavedCalcConfig, ShopName } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/select';
 import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
-  BarChart3, Package, TrendingUp, TrendingDown, DollarSign,
+  BarChart3, Package, TrendingUp, TrendingDown,
   ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X, Store,
 } from 'lucide-react';
 
@@ -43,7 +43,12 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
+  const [selectedShopName, setSelectedShopName] = useState<string>('');
+  const [selectedConfigId, setSelectedConfigId] = useState<string>('');
   const config = PLATFORM_CONFIG[platform];
+  const { shopNames, savedConfigs } = useAppStore();
+  const platformShopNames = shopNames.filter((s: ShopName) => s.platform === platform);
+  const platformConfigs = savedConfigs[platform] || [];
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -65,6 +70,8 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
         headers,
         rows,
         yearMonth,
+        shopName: selectedShopName,
+        configId: selectedConfigId,
       });
     } catch (err) {
       console.error('导入失败:', err);
@@ -72,7 +79,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
       setImporting(false);
       setPendingFile(null);
     }
-  }, [platform, importOrders, pendingFile, yearMonth]);
+  }, [platform, importOrders, pendingFile, yearMonth, selectedShopName, selectedConfigId]);
 
   const handleCancelImport = useCallback(() => {
     setPendingFile(null);
@@ -181,15 +188,15 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
         </div>
       )}
 
-      {/* 年月选择弹窗 */}
+      {/* 导入设置弹窗 */}
       <Dialog open={!!pendingFile} onOpenChange={(open) => { if (!open) handleCancelImport(); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>设置数据所属年月</DialogTitle>
+            <DialogTitle>设置数据关联信息</DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-4">
             <div className="text-sm text-muted-foreground">
-              请选择该表格数据所属的年份和月份，用于统计结果中按时间筛选。
+              请设置该表格数据的关联信息，用于统计结果中按时间和店铺筛选。
             </div>
             <div>
               <label className="text-sm font-medium mb-2 block">年份月份</label>
@@ -200,13 +207,52 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
                 className="w-full"
               />
             </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">关联店铺</label>
+              {shopNames.filter((s) => s.platform === platform).length > 0 ? (
+                <Select value={selectedShopName} onValueChange={setSelectedShopName}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="选择店铺" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {shopNames.filter((s) => s.platform === platform).map((s) => (
+                      <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="text-sm text-amber-600 flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4" />
+                  未配置店铺名称，请先到「店铺名称明细」页面添加
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">关联计算方案</label>
+              {savedConfigs[platform].length > 0 ? (
+                <Select value={selectedConfigId} onValueChange={setSelectedConfigId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="选择计算方案" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {savedConfigs[platform].map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  请先在「计算配置」中创建方案
+                </div>
+              )}
+            </div>
             <div className="text-xs text-muted-foreground">
               当前文件：<span className="font-medium text-foreground">{pendingFile?.name}</span>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={handleCancelImport}>取消</Button>
-            <Button onClick={handleConfirmImport} disabled={!yearMonth || importing}>
+            <Button onClick={handleConfirmImport} disabled={!yearMonth || !selectedShopName || !selectedConfigId || importing}>
               <Upload className="h-4 w-4 mr-1" />
               {importing ? '导入中...' : '确认导入'}
             </Button>
@@ -221,7 +267,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const {
     savedConfigs, activeConfigId, getActiveConfig,
-    updateFieldMapping, updateFieldAlias, updateFormula, updateConfigShopName, availableHeaders, rawOrders, skuMappings, shopNames,
+    updateFieldMapping, updateFieldAlias, updateFormula, availableHeaders, rawOrders, skuMappings, shopNames,
     saveCurrentConfig, switchConfig, deleteConfig, renameConfig,
   } = useAppStore();
   const config = getActiveConfig(platform);
@@ -412,12 +458,6 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                   ) : (
                     <>
                       <span className="flex-1 font-medium truncate">{c.name}</span>
-                      {c.shopName && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
-                          <Store className="h-2.5 w-2.5 mr-0.5" />
-                          {c.shopName}
-                        </Badge>
-                      )}
                       {c.id === currentId && (
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">使用中</Badge>
                       )}
@@ -460,7 +500,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
             <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
           </CardTitle>
           <CardDescription>
-            从导入表格的列头中选择对应的系统字段。双击字段名称可自定义命名；「商品名称」由 SKU 映射库自动匹配，「店铺名称」从店铺名称明细中选择。
+            从导入表格的列头中选择对应的系统字段。双击字段名称可自定义命名；「商品名称」由 SKU 映射库自动匹配；「店铺名称」在导入表格时选择。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -482,40 +522,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                   </span>
                 </div>
               </div>
-              {/* 店铺名称 — 从店铺名称明细中选择 */}
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium flex items-center gap-1.5">
-                  <Store className="h-3.5 w-3.5 text-slate-400" />
-                  店铺名称
-                </label>
-                {platformShopNames.length > 0 ? (
-                  <Select
-                    value={config.shopName || '__none__'}
-                    onValueChange={(value) => updateConfigShopName(platform, value === '__none__' ? '' : value)}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="选择店铺..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">
-                        <span className="text-muted-foreground">— 不指定 —</span>
-                      </SelectItem>
-                      {platformShopNames.map((s) => (
-                        <SelectItem key={s.id} value={s.name}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="flex h-9 items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 text-sm">
-                    <Store className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span className="text-slate-500 truncate">
-                      暂无店铺名称，请先在「店铺名称明细」中配置
-                    </span>
-                  </div>
-                )}
-              </div>
+              {/* 店铺名称 — 在导入时选择 */}
               {fieldKeys.map((key) => (
                 <div key={key} className="space-y-1.5">
                   {editingAlias === key ? (
@@ -844,8 +851,8 @@ function PlatformStats({ platform }: { platform: Platform }) {
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
-              <DollarSign className="h-3.5 w-3.5" />
-              ￥总销售额
+              <TrendingUp className="h-3.5 w-3.5" />
+              总销售额
             </div>
             <div className="text-lg font-bold font-mono">
               {formatCurrency(filteredTotalSales)}
@@ -973,16 +980,16 @@ function PlatformStats({ platform }: { platform: Platform }) {
 
       {/* 数据表格 */}
       {viewMode === 'sku' ? (
-        <SkuSummaryTable summaries={filteredSkuSummaries} />
+        <SkuSummaryTable summaries={filteredSkuSummaries} platform={platform} />
       ) : (
-        <OrderDetailTable orders={filteredOrders} />
+        <OrderDetailTable orders={filteredOrders} platform={platform} />
       )}
     </div>
   );
 }
 
 // 商品统计表格（按商品名称分类）
-function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
+function SkuSummaryTable({ summaries, platform }: { summaries: SkuSummary[]; platform: Platform }) {
   return (
     <Card>
       <CardContent className="p-0">
@@ -1014,7 +1021,7 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
                   <TableCell className="text-right font-mono" style={{ color: s.totalProfit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(s.totalProfit)}
                   </TableCell>
-                  <TableCell className="text-right font-mono" style={{ color: s.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
+                  <TableCell className="text-right font-mono" style={{ color: platform === 'tiktok' && s.profitRate < 25 ? '#ef4444' : s.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
                     {s.profitRate.toFixed(1)}%
                   </TableCell>
                 </TableRow>
@@ -1028,7 +1035,7 @@ function SkuSummaryTable({ summaries }: { summaries: SkuSummary[] }) {
 }
 
 // 订单明细表格
-function OrderDetailTable({ orders }: { orders: CalculatedOrder[] }) {
+function OrderDetailTable({ orders, platform }: { orders: CalculatedOrder[]; platform: Platform }) {
   return (
     <Card>
       <CardContent className="p-0">
@@ -1074,7 +1081,7 @@ function OrderDetailTable({ orders }: { orders: CalculatedOrder[] }) {
                   <TableCell className="text-right font-mono" style={{ color: order.profit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(order.profit)}
                   </TableCell>
-                  <TableCell className="text-right font-mono" style={{ color: order.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
+                  <TableCell className="text-right font-mono" style={{ color: platform === 'tiktok' && order.profitRate < 25 ? '#ef4444' : order.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
                     {order.profitRate.toFixed(1)}%
                   </TableCell>
                 </TableRow>
