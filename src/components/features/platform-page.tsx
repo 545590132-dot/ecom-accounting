@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -29,7 +30,7 @@ import {
 import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
   BarChart3, Package, TrendingUp, TrendingDown,
-  ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X, Store,
+  ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X, Store, Filter,
 } from 'lucide-react';
 
 // 平台数据导入组件
@@ -267,7 +268,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const {
     savedConfigs, activeConfigId, getActiveConfig,
-    updateFieldMapping, updateFieldAlias, updateFormula, availableHeaders, rawOrders, skuMappings, shopNames,
+    updateFieldMapping, updateFieldAlias, updateFormula, updateFilterRules, availableHeaders, rawOrders, skuMappings, shopNames,
     saveCurrentConfig, switchConfig, deleteConfig, renameConfig,
   } = useAppStore();
   const config = getActiveConfig(platform);
@@ -301,6 +302,21 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
     profit: '利润',
     profitRate: '利润率(%)',
   };
+
+  // 获取指定字段在已导入数据中的所有唯一值（用于过滤规则的状态选择）
+  const getUniqueValuesForField = useCallback((fieldName: string): string[] => {
+    if (!fieldName) return [];
+    const values = new Set<string>();
+    for (const orderFile of rawOrders[platform]) {
+      for (const row of orderFile.rows) {
+        const val = row[fieldName];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          values.add(String(val).trim());
+        }
+      }
+    }
+    return Array.from(values).sort();
+  }, [rawOrders, platform]);
 
   // 双击编辑字段别名的处理
   const handleStartAliasEdit = (key: string) => {
@@ -579,6 +595,143 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* 订单过滤规则 */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Filter className="h-4 w-4 text-slate-500" />
+            订单过滤规则
+          </CardTitle>
+          <CardDescription className="text-xs">
+            设置哪些订单不计入统计，或只统计数量不计金额
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* 规则1：根据字段排除指定状态 */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-slate-700">排除指定状态的订单</Label>
+            <div className="flex items-center gap-2">
+              <Select
+                value={config?.filterRules?.excludeStatusField || ''}
+                onValueChange={(v) => {
+                  updateFilterRules(platform, { excludeStatusField: v });
+                  // 清空之前选择的排除值
+                  if (v !== (config?.filterRules?.excludeStatusField || '')) {
+                    updateFilterRules(platform, { excludeStatusValues: [] });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-40 h-8 text-xs">
+                  <SelectValue placeholder="选择状态字段" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(headers || []).map((h: string) => (
+                    <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-slate-500">下的</span>
+            </div>
+            {config?.filterRules?.excludeStatusField && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {getUniqueValuesForField(config.filterRules.excludeStatusField).map((val: string) => {
+                    const isSelected = (config?.filterRules?.excludeStatusValues || []).includes(val);
+                    return (
+                      <Badge
+                        key={val}
+                        variant={isSelected ? 'default' : 'outline'}
+                        className={`cursor-pointer text-xs h-6 ${isSelected ? 'bg-red-100 text-red-700 hover:bg-red-200 border-red-300' : 'hover:bg-slate-100'}`}
+                        onClick={() => {
+                          const current = config?.filterRules?.excludeStatusValues || [];
+                          const next = isSelected
+                            ? current.filter((v: string) => v !== val)
+                            : [...current, val];
+                          updateFilterRules(platform, { excludeStatusValues: next });
+                        }}
+                      >
+                        {val}
+                      </Badge>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-400">
+                  点击选择不计入统计的状态（已选 {(config?.filterRules?.excludeStatusValues || []).length} 项）
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* 规则2：订单金额为0不计入 */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="excludeZeroAmount"
+              checked={config?.filterRules?.excludeZeroAmount ?? true}
+              onChange={(e) => updateFilterRules(platform, { excludeZeroAmount: e.target.checked })}
+              className="rounded border-slate-300"
+            />
+            <Label htmlFor="excludeZeroAmount" className="text-xs font-medium text-slate-700 cursor-pointer">
+              排除订单金额为0的订单（寄样订单）
+            </Label>
+          </div>
+
+          {/* 规则3：只统计数量不统计金额的状态 */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-slate-700">只统计数量不统计金额的订单</Label>
+            <div className="flex items-center gap-2">
+              <Select
+                value={config?.filterRules?.quantityOnlyStatusField || ''}
+                onValueChange={(v) => {
+                  updateFilterRules(platform, { quantityOnlyStatusField: v });
+                  if (v !== (config?.filterRules?.quantityOnlyStatusField || '')) {
+                    updateFilterRules(platform, { quantityOnlyStatusValues: [] });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-40 h-8 text-xs">
+                  <SelectValue placeholder="选择状态字段" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(headers || []).map((h: string) => (
+                    <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-slate-500">下的</span>
+            </div>
+            {config?.filterRules?.quantityOnlyStatusField && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {getUniqueValuesForField(config.filterRules.quantityOnlyStatusField).map((val: string) => {
+                    const isSelected = (config?.filterRules?.quantityOnlyStatusValues || []).includes(val);
+                    return (
+                      <Badge
+                        key={val}
+                        variant={isSelected ? 'default' : 'outline'}
+                        className={`cursor-pointer text-xs h-6 ${isSelected ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 border-amber-300' : 'hover:bg-slate-100'}`}
+                        onClick={() => {
+                          const current = config?.filterRules?.quantityOnlyStatusValues || [];
+                          const next = isSelected
+                            ? current.filter((v: string) => v !== val)
+                            : [...current, val];
+                          updateFilterRules(platform, { quantityOnlyStatusValues: next });
+                        }}
+                      >
+                        {val}
+                      </Badge>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-400">
+                  点击选择只统计数量的状态（已选 {(config?.filterRules?.quantityOnlyStatusValues || []).length} 项）
+                </p>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

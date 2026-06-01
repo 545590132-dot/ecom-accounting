@@ -44,6 +44,18 @@ export interface CalculationConfig {
   };
 }
 
+// 订单过滤规则
+export interface OrderFilterRules {
+  // 排除规则：指定字段下哪些值不计入统计（如取消订单）
+  excludeStatusField: string; // 字段名（表格列头）
+  excludeStatusValues: string[]; // 不计入统计的值列表
+  // 仅计数量规则：指定字段下哪些值只统计数量不统计金额（如退货订单）
+  quantityOnlyStatusField: string; // 字段名（表格列头）
+  quantityOnlyStatusValues: string[]; // 只统计数量的值列表
+  // 是否排除金额为0的订单（寄样订单）
+  excludeZeroAmount: boolean;
+}
+
 // 已保存的计算配置（支持每个平台存储多个方案）
 export interface SavedCalcConfig {
   id: string;
@@ -51,6 +63,7 @@ export interface SavedCalcConfig {
   fieldMapping: CalculationConfig['fieldMapping'];
   fieldAliases: Record<string, string>; // 字段别名，用户自定义的字段名称，如 { orderNo: '订单编号', sku: '商品编码' }
   formulas: CalculationConfig['formulas'];
+  filterRules: OrderFilterRules; // 订单过滤规则
   createdAt: number;
   updatedAt: number;
 }

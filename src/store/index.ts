@@ -12,10 +12,19 @@ import type {
   PlatformSummary,
   SkuSummary,
   ShopName,
+  OrderFilterRules,
 } from '@/types';
 import { generateId } from '@/types';
 
 // 默认字段映射为空 — 由用户从导入表格的表头中选择
+const DEFAULT_FILTER_RULES: OrderFilterRules = {
+  excludeStatusField: '',
+  excludeStatusValues: [],
+  excludeZeroAmount: true,
+  quantityOnlyStatusField: '',
+  quantityOnlyStatusValues: [],
+};
+
 const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
   orderNo: '',
   sku: '',
@@ -52,6 +61,7 @@ function createDefaultConfig(platform: Platform): SavedCalcConfig {
     fieldMapping: { ...EMPTY_FIELD_MAPPING },
     fieldAliases: { ...DEFAULT_FIELD_ALIASES },
     formulas: { ...DEFAULT_FORMULAS },
+    filterRules: { ...DEFAULT_FILTER_RULES },
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -93,6 +103,7 @@ interface AppState {
   renameConfig: (platform: Platform, configId: string, name: string) => void;
   // 更新当前激活配置的字段映射
   updateFieldMapping: (platform: Platform, field: string, value: string) => void;
+  updateFilterRules: (platform: Platform, rules: Partial<OrderFilterRules>) => void;
   // 更新当前激活配置的字段别名
   updateFieldAlias: (platform: Platform, field: string, alias: string) => void;
   // 更新当前激活配置的计算公式
@@ -216,6 +227,7 @@ export const useAppStore = create<AppState>()(
             fieldMapping: activeConfig ? { ...activeConfig.fieldMapping } : { ...EMPTY_FIELD_MAPPING },
             fieldAliases: activeConfig ? { ...activeConfig.fieldAliases } : { ...DEFAULT_FIELD_ALIASES },
             formulas: activeConfig ? { ...activeConfig.formulas } : { ...DEFAULT_FORMULAS },
+            filterRules: activeConfig ? { ...activeConfig.filterRules } : { ...DEFAULT_FILTER_RULES },
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -278,6 +290,25 @@ export const useAppStore = create<AppState>()(
                   ? {
                       ...c,
                       fieldMapping: { ...c.fieldMapping, [field]: value },
+                      updatedAt: Date.now(),
+                    }
+                  : c
+              ),
+            },
+          };
+        }),
+
+      updateFilterRules: (platform, rules) =>
+        set((state) => {
+          const activeId = state.activeConfigId[platform];
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: state.savedConfigs[platform].map((c) =>
+                c.id === activeId
+                  ? {
+                      ...c,
+                      filterRules: { ...c.filterRules, ...rules },
                       updatedAt: Date.now(),
                     }
                   : c
@@ -444,22 +475,48 @@ export const useAppStore = create<AppState>()(
               return val !== undefined && val !== null ? String(val) : '';
             };
 
-            const sku = getStrValue(mapping.sku);
-            const skuInfo = skuMap.find((m) => m.sku === sku);
-            const purchasePrice = skuInfo?.purchasePrice ?? 0;
-            // SKU 无法匹配出商品名称时，直接使用 SKU 作为商品名称
-            const productName = skuInfo?.productName || sku;
-            // 店铺名称：使用导入时关联的店铺名称
-            const shopName = orderFile.shopName || '';
-            // 年月：使用导入时自定义的年月
-            const orderDate = orderFile.yearMonth || '';
-
             // 从字段映射中获取原始数值
             const platformFee = getNumValue(mapping.platformFee);
             const shippingFee = getNumValue(mapping.shippingFee);
             const quantity = getNumValue(mapping.quantity);
             const unitPrice = getNumValue(mapping.unitPrice);
             const platformDiscount = getNumValue(mapping.platformDiscount);
+
+            // ====== 订单过滤逻辑 ======
+            const filterRules = config.filterRules;
+
+            // 规则①：指定字段下的某些状态不计入统计
+            if (filterRules.excludeStatusField && filterRules.excludeStatusValues.length > 0) {
+              const fieldValue = getStrValue(filterRules.excludeStatusField);
+              if (filterRules.excludeStatusValues.includes(fieldValue)) continue;
+            }
+
+            // 规则②：订单金额为0的订单不计入统计（寄样订单）
+            if (filterRules.excludeZeroAmount) {
+              const checkTotal = (unitPrice + platformDiscount) * 1.7;
+              if (checkTotal === 0) continue;
+            }
+
+            // 规则③：指定字段下的某些状态只统计数量不统计金额
+            let countOnlyQuantity = false;
+            if (filterRules.quantityOnlyStatusField && filterRules.quantityOnlyStatusValues.length > 0) {
+              const fieldValue = getStrValue(filterRules.quantityOnlyStatusField);
+              if (filterRules.quantityOnlyStatusValues.includes(fieldValue)) {
+                countOnlyQuantity = true;
+              }
+            }
+
+            // SKU 查找：通过 SKU 字段值匹配 SKU 映射库
+            const sku = getStrValue(mapping.sku);
+            const skuInfo = state.skuMappings.find((m: SkuMapping) => m.sku === sku);
+            // SKU 无法匹配出商品名称时，直接使用 SKU 作为商品名称
+            const productName = skuInfo?.productName || sku;
+            // 采购单价：从 SKU 映射获取
+            const purchasePrice = skuInfo?.purchasePrice || 0;
+            // 店铺名称：使用导入时关联的店铺名称
+            const orderShopName = orderFile.shopName || '';
+            // 年月：使用导入时自定义的年月
+            const orderDate = orderFile.yearMonth || '';
 
             // 构建公式上下文：字段映射值 + 采购单价
             const formulaContext: Record<string, number> = {
@@ -472,25 +529,25 @@ export const useAppStore = create<AppState>()(
             };
 
             // 按顺序计算公式：totalAmount → netAmount → profit → profitRate
-            const computedTotalAmount = evalFormula(config.formulas.totalAmount, formulaContext);
+            const computedTotalAmount = countOnlyQuantity ? 0 : evalFormula(config.formulas.totalAmount, formulaContext);
             formulaContext.totalAmount = computedTotalAmount;
 
-            const netAmount = evalFormula(config.formulas.netAmount, formulaContext);
+            const netAmount = countOnlyQuantity ? 0 : evalFormula(config.formulas.netAmount, formulaContext);
             formulaContext.netAmount = netAmount;
 
-            const profit = evalFormula(config.formulas.profit, formulaContext);
+            const profit = countOnlyQuantity ? 0 : evalFormula(config.formulas.profit, formulaContext);
             formulaContext.profit = profit;
 
-            const profitRate = evalFormula(config.formulas.profitRate, formulaContext);
+            const profitRate = countOnlyQuantity ? 0 : evalFormula(config.formulas.profitRate, formulaContext);
 
-            const purchaseCost = purchasePrice * quantity;
+            const purchaseCost = countOnlyQuantity ? 0 : purchasePrice * quantity;
 
             calculatedOrders.push({
               id: generateId(),
               orderNo: getStrValue(mapping.orderNo),
               sku,
               productName,
-              shopName,
+              shopName: orderShopName,
               orderDate,
               quantity,
               unitPrice,
@@ -609,6 +666,7 @@ export const useAppStore = create<AppState>()(
               fieldMapping: { ...cfg.fieldMapping },
               fieldAliases: { ...DEFAULT_FIELD_ALIASES },
               formulas: { ...cfg.formulas },
+              filterRules: { ...DEFAULT_FILTER_RULES },
               createdAt: Date.now(),
               updatedAt: Date.now(),
             }];
@@ -658,12 +716,43 @@ export const useAppStore = create<AppState>()(
                   formulas.profitRate = 'totalAmount > 0 ? (totalAmount - purchasePrice * quantity) / totalAmount * 100 : 0';
                 }
               }
+              // 补充 filterRules
+              const cfgRecord = cfg as unknown as Record<string, unknown>;
+              if (cfgRecord.filterRules === undefined) {
+                cfgRecord.filterRules = { ...DEFAULT_FILTER_RULES };
+              } else {
+                // 修复旧字段名：excludeField → excludeStatusField, excludeValues → excludeStatusValues
+                const fr = cfgRecord.filterRules as Record<string, unknown>;
+                if ('excludeField' in fr && !('excludeStatusField' in fr)) {
+                  fr.excludeStatusField = fr.excludeField;
+                  delete fr.excludeField;
+                }
+                if ('excludeValues' in fr && !('excludeStatusValues' in fr)) {
+                  fr.excludeStatusValues = fr.excludeValues;
+                  delete fr.excludeValues;
+                }
+                if ('countOnlyField' in fr && !('quantityOnlyStatusField' in fr)) {
+                  fr.quantityOnlyStatusField = fr.countOnlyField;
+                  delete fr.countOnlyField;
+                }
+                if ('countOnlyValues' in fr && !('quantityOnlyStatusValues' in fr)) {
+                  fr.quantityOnlyStatusValues = fr.countOnlyValues;
+                  delete fr.countOnlyValues;
+                }
+                // 确保数组类型
+                if (!Array.isArray(fr.excludeStatusValues)) {
+                  fr.excludeStatusValues = fr.excludeStatusValues ? String(fr.excludeStatusValues).split(',').filter(Boolean) : [];
+                }
+                if (!Array.isArray(fr.quantityOnlyStatusValues)) {
+                  fr.quantityOnlyStatusValues = fr.quantityOnlyStatusValues ? String(fr.quantityOnlyStatusValues).split(',').filter(Boolean) : [];
+                }
+              }
             }
           }
         }
         return ps;
       },
-      version: 6,
+      version: 8,
     }
   )
 );

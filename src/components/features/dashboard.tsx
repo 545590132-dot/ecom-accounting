@@ -8,8 +8,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import {
   ShoppingCart, Package, TrendingUp, TrendingDown,
-  BarChart3, CircleDollarSign,
+  BarChart3,
 } from 'lucide-react';
+
+function YuanIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3l6 8M18 3l-6 8" />
+      <path d="M6 21h12" />
+      <path d="M6 15h12" />
+      <path d="M8 15v6M16 15v6" />
+    </svg>
+  );
+}
 
 function StatCard({
   title,
@@ -132,7 +143,7 @@ export function DashboardOverview() {
             <StatCard
               title="总销售额"
               value={formatCurrency(totalSales)}
-              icon={CircleDollarSign}
+              icon={YuanIcon}
             />
             <StatCard
               title="总订单数"
@@ -153,7 +164,7 @@ export function DashboardOverview() {
             <StatCard
               title="扣费后金额"
               value={formatCurrency(totalNetAmount)}
-              icon={CircleDollarSign}
+              icon={YuanIcon}
             />
             <StatCard
               title="总利润"
