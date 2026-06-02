@@ -419,6 +419,7 @@ export const useAppStore = create<AppState>()(
         const skuMap = state.skuMappings;
 
         const calculatedOrders: CalculatedOrder[] = [];
+        let excludedCount = 0;
 
         // 安全执行公式表达式
         const evalFormula = (expression: string, context: Record<string, number>): number => {
@@ -503,6 +504,7 @@ export const useAppStore = create<AppState>()(
                 v => v.trim().toLowerCase() === rawValue.toLowerCase()
               );
               if (shouldExclude) {
+                excludedCount++;
                 continue;
               }
             }
@@ -510,7 +512,10 @@ export const useAppStore = create<AppState>()(
             // 规则②：订单金额为0的订单不计入统计（寄样订单）
             if (filterRules.excludeZeroAmount) {
               const checkTotal = (unitPrice + platformDiscount) * 1.7;
-              if (checkTotal === 0) continue;
+              if (checkTotal === 0) {
+                excludedCount++;
+                continue;
+              }
             }
 
             // 规则③：指定字段下的某些状态只统计数量不统计金额
@@ -604,6 +609,7 @@ export const useAppStore = create<AppState>()(
           totalPurchaseCost,
           totalProfit,
           totalProfitRate,
+          excludedCount,
           orders: calculatedOrders,
         };
       },
@@ -612,9 +618,9 @@ export const useAppStore = create<AppState>()(
         const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
         const state = get();
         const result: Record<Platform, PlatformSummary> = {
-          shopee: { platform: 'shopee', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, orders: [] },
-          lazada: { platform: 'lazada', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, orders: [] },
-          tiktok: { platform: 'tiktok', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, orders: [] },
+          shopee: { platform: 'shopee', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, excludedCount: 0, orders: [] },
+          lazada: { platform: 'lazada', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, excludedCount: 0, orders: [] },
+          tiktok: { platform: 'tiktok', totalSales: 0, totalOrders: 0, totalQuantity: 0, totalPlatformFee: 0, totalNetAmount: 0, totalPurchaseCost: 0, totalProfit: 0, totalProfitRate: 0, excludedCount: 0, orders: [] },
         };
         for (const p of platforms) {
           result[p] = state.calculateSummary(p);
@@ -771,7 +777,7 @@ export const useAppStore = create<AppState>()(
         }
         return ps;
       },
-      version: 8,
+      version: 9,
     }
   )
 );

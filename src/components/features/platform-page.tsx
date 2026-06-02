@@ -848,13 +848,14 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
 
 // 平台统计结果组件
 function PlatformStats({ platform }: { platform: Platform }) {
-  const { calculateSummary, calculateSkuSummaries, shopNames } = useAppStore();
+  const { calculateSummary, calculateSkuSummaries, shopNames, rawOrders, savedConfigs, activeConfigId, getActiveConfig } = useAppStore();
   const summary = calculateSummary(platform);
   const skuSummaries = calculateSkuSummaries(platform);
   const platformConfig = PLATFORM_CONFIG[platform];
   const [viewMode, setViewMode] = useState<'orders' | 'sku'>('sku');
   const [filterShop, setFilterShop] = useState<string>('__all__');
   const [filterYearMonth, setFilterYearMonth] = useState<string>('__all__');
+  const [showDebug, setShowDebug] = useState(false);
 
   // 获取该平台下的店铺名称列表
   const platformShops = shopNames.filter((s) => s.platform === platform);
@@ -995,9 +996,89 @@ function PlatformStats({ platform }: { platform: Platform }) {
                 已筛选 {filteredOrders.length} / {summary.orders.length} 条订单
               </span>
             )}
+            {summary.excludedCount > 0 && (
+              <span className="text-xs text-amber-600">
+                已排除 {summary.excludedCount} 条订单（过滤规则）
+              </span>
+            )}
+            {summary.excludedCount === 0 && (() => {
+              const ac = getActiveConfig(platform);
+              const hasRules = ac?.filterRules?.excludeStatusField || ac?.filterRules?.quantityOnlyStatusField;
+              return hasRules ? (
+                <span className="text-xs text-orange-500">
+                  过滤规则已设置但未排除任何订单
+                </span>
+              ) : null;
+            })()}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground h-6"
+              onClick={() => setShowDebug(!showDebug)}
+            >
+              {showDebug ? '隐藏诊断' : '诊断过滤'}
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* 过滤诊断面板 */}
+      {showDebug && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="pt-4 pb-4">
+            <h4 className="text-sm font-bold text-amber-800 mb-2">过滤规则诊断</h4>
+            <div className="space-y-2 text-xs font-mono">
+              {(() => {
+                const activeConfig = getActiveConfig(platform);
+                const platformOrders = rawOrders[platform] || [];
+                const configs = savedConfigs[platform] || [];
+                return (
+                  <>
+                    <div><strong>激活方案ID:</strong> {activeConfigId[platform]}</div>
+                    <div><strong>激活方案名称:</strong> {activeConfig?.name}</div>
+                    <div><strong>过滤规则:</strong> {JSON.stringify(activeConfig?.filterRules)}</div>
+                    <div><strong>所有方案:</strong> {configs.map((c: SavedCalcConfig) => `${c.name}(${c.id})`).join(', ')}</div>
+                    <div><strong>导入文件数:</strong> {platformOrders.length}</div>
+                    {platformOrders.map((file: RawOrderData, idx: number) => {
+                      const fileConfig = file.configId
+                        ? configs.find((c: SavedCalcConfig) => c.id === file.configId)
+                        : activeConfig;
+                      const statusField = fileConfig?.filterRules?.excludeStatusField;
+                      const statusValues: string[] = [];
+                      if (statusField && file.rows) {
+                        const seen = new Set<string>();
+                        for (const row of file.rows) {
+                          let val: string | number | undefined = row[statusField];
+                          if (val === undefined || val === null) {
+                            const trimmedKey = Object.keys(row).find(k => k.trim() === statusField);
+                            val = trimmedKey ? row[trimmedKey] : undefined;
+                          }
+                          if (val !== undefined && val !== null) seen.add(String(val));
+                        }
+                        seen.forEach(v => statusValues.push(v));
+                      }
+                      return (
+                        <div key={file.id} className="border-t border-amber-200 pt-2">
+                          <div><strong>文件{idx + 1}:</strong> configId={file.configId}, shop={file.shopName}, rows={file.rows?.length}</div>
+                          <div><strong>关联方案:</strong> {fileConfig?.name}({fileConfig?.id})</div>
+                          <div><strong>关联方案过滤规则:</strong> {JSON.stringify(fileConfig?.filterRules)}</div>
+                          <div><strong>行Key样本:</strong> {file.rows?.[0] ? Object.keys(file.rows[0]).slice(0, 8).join(', ') : '无'}</div>
+                          {statusField && (
+                            <div><strong>状态字段"{statusField}"的唯一值:</strong> {statusValues.length > 0 ? statusValues.map(v => `"${v}"`).join(', ') : '(无匹配值)'}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <div className="border-t border-amber-200 pt-2">
+                      <strong>统计结果:</strong> orders={summary.orders.length}, excludedCount={summary.excludedCount}, totalSales={summary.totalSales}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 汇总卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

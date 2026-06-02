@@ -114,6 +114,7 @@ export interface PlatformSummary {
   totalPurchaseCost: number; // 总采购成本
   totalProfit: number; // 总利润
   totalProfitRate: number; // 总利润率(%)
+  excludedCount: number; // 被过滤规则排除的订单数
   orders: CalculatedOrder[];
 }
 
