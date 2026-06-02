@@ -31,6 +31,7 @@ import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
   BarChart3, Package, TrendingUp, TrendingDown,
   ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X, Store, Filter,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 
 // 平台数据导入组件
@@ -1223,7 +1224,43 @@ function PlatformStats({ platform }: { platform: Platform }) {
 }
 
 // 商品统计表格（按商品名称分类）
+type SortField = 'totalQuantity' | 'totalSales' | 'totalProfit' | 'profitRate';
+type SortDirection = 'asc' | 'desc';
+
 function SkuSummaryTable({ summaries, platform }: { summaries: SkuSummary[]; platform: Platform }) {
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const sortedSummaries = useMemo(() => {
+    if (!sortField) return summaries;
+    return [...summaries].sort((a, b) => {
+      const aVal = a[sortField];
+      const bVal = b[sortField];
+      const diff = (aVal as number) - (bVal as number);
+      return sortDirection === 'asc' ? diff : -diff;
+    });
+  }, [summaries, sortField, sortDirection]);
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="ml-1 inline h-3 w-3 text-muted-foreground/50" />;
+    }
+    return sortDirection === 'asc'
+      ? <ArrowUp className="ml-1 inline h-3 w-3 text-emerald-600" />
+      : <ArrowDown className="ml-1 inline h-3 w-3 text-emerald-600" />;
+  };
+
+  const sortableCls = "cursor-pointer select-none hover:text-foreground transition-colors";
+
   return (
     <Card>
       <CardContent className="p-0">
@@ -1233,17 +1270,25 @@ function SkuSummaryTable({ summaries, platform }: { summaries: SkuSummary[]; pla
               <TableRow>
                 <TableHead>商品名称</TableHead>
                 <TableHead className="w-[100px]">店铺名称</TableHead>
-                <TableHead className="w-[80px] text-right">销量</TableHead>
-                <TableHead className="w-[130px] text-right">总价</TableHead>
+                <TableHead className={`w-[80px] text-right ${sortableCls}`} onClick={() => handleSort('totalQuantity')}>
+                  销量<SortIcon field="totalQuantity" />
+                </TableHead>
+                <TableHead className={`w-[130px] text-right ${sortableCls}`} onClick={() => handleSort('totalSales')}>
+                  总价<SortIcon field="totalSales" />
+                </TableHead>
                 <TableHead className="w-[110px] text-right">平均单价</TableHead>
                 <TableHead className="w-[110px] text-right">采购单价</TableHead>
                 <TableHead className="w-[120px] text-right">采购成本</TableHead>
-                <TableHead className="w-[120px] text-right">利润</TableHead>
-                <TableHead className="w-[80px] text-right">利润率</TableHead>
+                <TableHead className={`w-[120px] text-right ${sortableCls}`} onClick={() => handleSort('totalProfit')}>
+                  利润<SortIcon field="totalProfit" />
+                </TableHead>
+                <TableHead className={`w-[80px] text-right ${sortableCls}`} onClick={() => handleSort('profitRate')}>
+                  利润率<SortIcon field="profitRate" />
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {summaries.map((s) => (
+              {sortedSummaries.map((s) => (
                 <TableRow key={`${s.productName}-${s.shopName}`}>
                   <TableCell className="font-medium">{s.productName || '-'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>
