@@ -198,9 +198,8 @@ export function SkuManager() {
           <span>筛选显示 <span className="font-medium text-foreground">{filteredMappings.length}</span> 条</span>
         )}
         {platformMappings.length > 0 && (
-          <Button variant="ghost" size="sm" className="h-auto p-0 text-destructive hover:text-destructive" onClick={async () => {
-            const ids = platformMappings.map((m) => m.id);
-            for (const id of ids) await deleteSkuMapping(id);
+          <Button variant="ghost" size="sm" className="h-auto p-0 text-destructive hover:text-destructive" onClick={() => {
+            platformMappings.forEach((m) => deleteSkuMapping(m.id));
           }}>
             清空当前平台
           </Button>

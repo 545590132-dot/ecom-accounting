@@ -321,7 +321,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const id = generateId();
     const newMapping = { ...mapping, id };
     set((s) => ({ skuMappings: [...s.skuMappings, newMapping] }));
-    await dbOps.upsertSkuMapping(newMapping);
+    dbOps.upsertSkuMapping(newMapping).catch(console.error);
   },
 
   updateSkuMapping: async (id, mapping) => {
@@ -329,28 +329,24 @@ export const useAppStore = create<AppState>()((set, get) => ({
       skuMappings: s.skuMappings.map((m) => (m.id === id ? { ...m, ...mapping } : m)),
     }));
     const existing = get().skuMappings.find((m) => m.id === id);
-    if (existing) await dbOps.upsertSkuMapping(existing);
+    if (existing) dbOps.upsertSkuMapping(existing).catch(console.error);
   },
 
   deleteSkuMapping: async (id) => {
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
-    await dbOps.deleteSkuMapping(id);
+    dbOps.deleteSkuMapping(id).catch(console.error);
   },
 
   importSkuMappings: async (mappings) => {
     const newMappings = mappings.map((m) => ({ ...m, id: generateId() }));
     set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
-    for (const m of newMappings) {
-      await dbOps.upsertSkuMapping(m);
-    }
+    Promise.all(newMappings.map((m) => dbOps.upsertSkuMapping(m))).catch(console.error);
   },
 
   clearSkuMappings: async () => {
     const ids = get().skuMappings.map((m) => m.id);
     set({ skuMappings: [] });
-    for (const id of ids) {
-      await dbOps.deleteSkuMapping(id);
-    }
+    Promise.all(ids.map((id) => dbOps.deleteSkuMapping(id))).catch(console.error);
   },
 
   // ====== 店铺名称 ======
@@ -358,7 +354,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const id = generateId();
     const newName = { ...name, id };
     set((s) => ({ shopNames: [...s.shopNames, newName] }));
-    await dbOps.insertShopName(newName);
+    dbOps.insertShopName(newName).catch(console.error);
   },
 
   addShopNamesBatch: async (platform, names) => {
@@ -369,9 +365,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       createdAt: Date.now(),
     }));
     set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
-    for (const name of newNames) {
-      await dbOps.insertShopName(name);
-    }
+    Promise.all(newNames.map((n) => dbOps.insertShopName(n))).catch(console.error);
   },
 
   updateShopName: async (id, name) => {
@@ -379,20 +373,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
       shopNames: s.shopNames.map((n) => (n.id === id ? { ...n, name } : n)),
     }));
     const current = get().shopNames.find((n) => n.id === id);
-    if (current) await dbOps.insertShopName(current);
+    if (current) dbOps.insertShopName(current).catch(console.error);
   },
 
   deleteShopName: async (id) => {
     set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
-    await dbOps.deleteShopName(id);
+    dbOps.deleteShopName(id).catch(console.error);
   },
 
   clearShopNames: async (platform) => {
     const ids = get().shopNames.filter((n) => n.platform === platform).map((n) => n.id);
     set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
-    for (const id of ids) {
-      await dbOps.deleteShopName(id);
-    }
+    Promise.all(ids.map((id) => dbOps.deleteShopName(id))).catch(console.error);
   },
 
   // ====== 计算配置 ======
@@ -404,12 +396,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   setActiveConfig: async (platform, configId) => {
     set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
-    // 更新数据库中的 is_active 状态
+    // 后台异步更新数据库中的 is_active 状态
     const configs = get().savedConfigs[platform] || [];
-    for (const config of configs) {
+    Promise.all(configs.map((config) => {
       const isActive = config.id === configId;
-      await dbOps.upsertCalcConfig(config, platform, isActive);
-    }
+      return dbOps.upsertCalcConfig(config, platform, isActive);
+    })).catch(console.error);
   },
 
   updateFieldMapping: async (platform, field, value) => {
@@ -426,7 +418,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
     }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) await dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]);
+    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
   },
 
   updateFieldAlias: async (platform, field, alias) => {
@@ -443,7 +435,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
     }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) await dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]);
+    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
   },
 
   updateFormula: async (platform, field, formula) => {
@@ -460,7 +452,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
     }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) await dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]);
+    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
   },
 
   updateFilterRules: async (platform, rules) => {
@@ -477,7 +469,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
     }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) await dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]);
+    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
   },
 
   setCountQuantityAsRows: async (platform, value) => {
@@ -492,7 +484,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
     }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) await dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]);
+    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
   },
 
   setProfitRateRedThreshold: async (platform, value) => {
@@ -507,7 +499,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
     }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) await dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]);
+    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
   },
 
   saveAsNewConfig: async (platform, name) => {
@@ -527,10 +519,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
       activeConfigId: { ...s.activeConfigId, [platform]: newConfig.id },
     }));
-    // 更新数据库：新方案激活，旧方案取消激活
-    await dbOps.upsertCalcConfig(newConfig, platform, true);
+    // 后台异步更新数据库：新方案激活，旧方案取消激活
+    dbOps.upsertCalcConfig(newConfig, platform, true).catch(console.error);
     const oldConfig = get().savedConfigs[platform].find((c) => c.id === activeConfig.id);
-    if (oldConfig) await dbOps.upsertCalcConfig(oldConfig, platform, false);
+    if (oldConfig) dbOps.upsertCalcConfig(oldConfig, platform, false).catch(console.error);
   },
 
   renameConfig: async (platform, configId, name) => {
@@ -543,7 +535,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
     }));
     const config = get().savedConfigs[platform].find((c) => c.id === configId);
-    if (config) await dbOps.upsertCalcConfig(config, platform, configId === get().activeConfigId[platform]);
+    if (config) dbOps.upsertCalcConfig(config, platform, configId === get().activeConfigId[platform]).catch(console.error);
   },
 
   deleteConfig: async (platform, configId) => {
@@ -558,7 +550,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ? { ...s.activeConfigId, [platform]: configs[0].id === configId ? configs[1].id : configs[0].id }
         : s.activeConfigId,
     }));
-    await dbOps.deleteCalcConfig(configId);
+    dbOps.deleteCalcConfig(configId).catch(console.error);
   },
 
   saveCurrentConfig: async (platform, name) => {
@@ -583,17 +575,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
       activeConfigId: { ...s.activeConfigId, [platform]: id },
     }));
-    await dbOps.upsertCalcConfig(newConfig, platform, true);
+    dbOps.upsertCalcConfig(newConfig, platform, true).catch(console.error);
   },
 
   switchConfig: async (platform, configId) => {
     set({ activeConfigId: { ...get().activeConfigId, [platform]: configId } });
-    // 更新数据库中的 is_active 状态
+    // 后台异步更新数据库中的 is_active 状态
     const configs = get().savedConfigs[platform] || [];
-    for (const config of configs) {
+    Promise.all(configs.map((config) => {
       const isActive = config.id === configId;
-      await dbOps.upsertCalcConfig(config, platform, isActive);
-    }
+      return dbOps.upsertCalcConfig(config, platform, isActive);
+    })).catch(console.error);
   },
 
   // ====== 导入数据 ======
@@ -622,8 +614,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // 合并 headers
     get().mergeHeaders(platform, data.headers);
 
-    // 写入 Supabase
-    await dbOps.insertOrderFile(
+    // 后台异步写入 Supabase
+    dbOps.insertOrderFile(
       {
         id,
         platform,
@@ -635,7 +627,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         file_name: data.fileName || '',
       },
       data.rows
-    );
+    ).catch(console.error);
   },
 
   deleteOrderFile: async (platform, fileId) => {
@@ -645,7 +637,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.rawOrders[platform].filter((f) => f.id !== fileId),
       },
     }));
-    await dbOps.deleteOrderFile(fileId);
+    dbOps.deleteOrderFile(fileId).catch(console.error);
   },
 
   clearOrders: async (platform) => {
@@ -654,9 +646,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       rawOrders: { ...s.rawOrders, [platform]: [] },
       availableHeaders: { ...s.availableHeaders, [platform]: [] },
     }));
-    for (const id of ids) {
-      await dbOps.deleteOrderFile(id);
-    }
+    Promise.all(ids.map((id) => dbOps.deleteOrderFile(id))).catch(console.error);
   },
 
   mergeHeaders: (platform, headers) => {
