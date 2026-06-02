@@ -584,27 +584,28 @@ export const useAppStore = create<AppState>()(
             const orderDate = orderFile.yearMonth || '';
 
             // 构建公式上下文：字段映射值 + 采购单价
+            // countOnlyQuantity 订单：单价不计入，但各项服务费仍需计入
             const formulaContext: Record<string, number> = {
               quantity,
-              unitPrice,
+              unitPrice: countOnlyQuantity ? 0 : unitPrice,
               platformDiscount,
               platformFee,
               shippingFee,
               commission,
-              purchasePrice,
+              purchasePrice: countOnlyQuantity ? 0 : purchasePrice,
             };
 
             // 按顺序计算公式：totalAmount → netAmount → profit → profitRate
-            const computedTotalAmount = countOnlyQuantity ? 0 : evalFormula(config.formulas.totalAmount, formulaContext);
+            const computedTotalAmount = evalFormula(config.formulas.totalAmount, formulaContext);
             formulaContext.totalAmount = computedTotalAmount;
 
-            const netAmount = countOnlyQuantity ? 0 : evalFormula(config.formulas.netAmount, formulaContext);
+            const netAmount = evalFormula(config.formulas.netAmount, formulaContext);
             formulaContext.netAmount = netAmount;
 
-            const profit = countOnlyQuantity ? 0 : evalFormula(config.formulas.profit, formulaContext);
+            const profit = evalFormula(config.formulas.profit, formulaContext);
             formulaContext.profit = profit;
 
-            const profitRate = countOnlyQuantity ? 0 : evalFormula(config.formulas.profitRate, formulaContext);
+            const profitRate = evalFormula(config.formulas.profitRate, formulaContext);
 
             const purchaseCost = countOnlyQuantity ? 0 : purchasePrice * quantity;
 
