@@ -63,6 +63,7 @@ function createDefaultConfig(platform: Platform): SavedCalcConfig {
     formulas: { ...DEFAULT_FORMULAS },
     filterRules: { ...DEFAULT_FILTER_RULES },
     countQuantityAsRows: platform === 'lazada',
+    profitRateRedThreshold: platform === 'tiktok' ? 25 : null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -107,6 +108,7 @@ interface AppState {
   updateFilterRules: (platform: Platform, rules: Partial<OrderFilterRules>) => void;
   // 设置数量计算方式（求和/计数）
   setCountQuantityAsRows: (platform: Platform, value: boolean) => void;
+  setProfitRateRedThreshold: (platform: Platform, value: number | null) => void;
   // 更新当前激活配置的字段别名
   updateFieldAlias: (platform: Platform, field: string, alias: string) => void;
   // 更新当前激活配置的计算公式
@@ -232,6 +234,7 @@ export const useAppStore = create<AppState>()(
             formulas: activeConfig ? { ...activeConfig.formulas } : { ...DEFAULT_FORMULAS },
             filterRules: activeConfig ? { ...activeConfig.filterRules } : { ...DEFAULT_FILTER_RULES },
             countQuantityAsRows: activeConfig ? activeConfig.countQuantityAsRows : platform === 'lazada',
+            profitRateRedThreshold: activeConfig ? activeConfig.profitRateRedThreshold : (platform === 'tiktok' ? 25 : null),
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -330,6 +333,21 @@ export const useAppStore = create<AppState>()(
               [platform]: state.savedConfigs[platform].map((c) =>
                 c.id === activeId
                   ? { ...c, countQuantityAsRows: value, updatedAt: Date.now() }
+                  : c
+              ),
+            },
+          };
+        }),
+
+      setProfitRateRedThreshold: (platform, value) =>
+        set((state) => {
+          const activeId = state.activeConfigId[platform];
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: state.savedConfigs[platform].map((c) =>
+                c.id === activeId
+                  ? { ...c, profitRateRedThreshold: value, updatedAt: Date.now() }
                   : c
               ),
             },
@@ -713,6 +731,7 @@ export const useAppStore = create<AppState>()(
               formulas: { ...cfg.formulas },
               filterRules: { ...DEFAULT_FILTER_RULES },
               countQuantityAsRows: platform === 'lazada',
+              profitRateRedThreshold: platform === 'tiktok' ? 25 : null,
               createdAt: Date.now(),
               updatedAt: Date.now(),
             }];
@@ -798,12 +817,16 @@ export const useAppStore = create<AppState>()(
               if (cfgRecord2.countQuantityAsRows === undefined) {
                 cfgRecord2.countQuantityAsRows = platformKey === 'lazada';
               }
+              // 补充 profitRateRedThreshold
+              if (cfgRecord2.profitRateRedThreshold === undefined) {
+                cfgRecord2.profitRateRedThreshold = platformKey === 'tiktok' ? 25 : null;
+              }
             }
           }
         }
         return ps;
       },
-      version: 10,
+      version: 11,
     }
   )
 );

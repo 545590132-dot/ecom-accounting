@@ -272,7 +272,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const {
     savedConfigs, activeConfigId, getActiveConfig,
-    updateFieldMapping, updateFieldAlias, updateFormula, updateFilterRules, setCountQuantityAsRows, availableHeaders, rawOrders, skuMappings, shopNames,
+    updateFieldMapping, updateFieldAlias, updateFormula, updateFilterRules, setCountQuantityAsRows, setProfitRateRedThreshold, availableHeaders, rawOrders, skuMappings, shopNames,
     saveCurrentConfig, switchConfig, deleteConfig, renameConfig,
   } = useAppStore();
   const config = getActiveConfig(platform);
@@ -781,6 +781,57 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
         </CardContent>
       </Card>
 
+      {/* 利润率标红阈值 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <TrendingDown className="h-4 w-4" />
+            利润率标红设定
+            <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
+          </CardTitle>
+          <CardDescription>
+            设置利润率低于多少时在统计结果中标红显示。留空或设为0表示不标红。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.profitRateRedThreshold !== null}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setProfitRateRedThreshold(platform, 25);
+                  } else {
+                    setProfitRateRedThreshold(platform, null);
+                  }
+                }}
+                className="accent-slate-800"
+              />
+              <span className="text-sm">启用利润率标红</span>
+            </label>
+            {config.profitRateRedThreshold !== null && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600">利润率低于</span>
+                <input
+                  type="number"
+                  value={config.profitRateRedThreshold}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setProfitRateRedThreshold(platform, val === '' ? null : Number(val));
+                  }}
+                  className="w-20 h-8 px-2 text-sm border rounded-md text-center font-mono"
+                  min={0}
+                  max={100}
+                  step={1}
+                />
+                <span className="text-sm text-slate-600">% 标红</span>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* 计算公式 */}
       <Card>
         <CardHeader className="pb-4">
@@ -895,6 +946,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
 // 平台统计结果组件
 function PlatformStats({ platform }: { platform: Platform }) {
   const { calculateSummary, calculateSkuSummaries, shopNames, rawOrders, savedConfigs, activeConfigId, getActiveConfig } = useAppStore();
+  const activeConfig = getActiveConfig(platform);
   const summary = calculateSummary(platform);
   const skuSummaries = calculateSkuSummaries(platform);
   const platformConfig = PLATFORM_CONFIG[platform];
@@ -1327,9 +1379,9 @@ function PlatformStats({ platform }: { platform: Platform }) {
 
       {/* 数据表格 */}
       {viewMode === 'sku' ? (
-        <SkuSummaryTable summaries={filteredSkuSummaries} platform={platform} />
+        <SkuSummaryTable summaries={filteredSkuSummaries} profitRateRedThreshold={activeConfig?.profitRateRedThreshold ?? null} />
       ) : (
-        <OrderDetailTable orders={filteredOrders} platform={platform} />
+        <OrderDetailTable orders={filteredOrders} profitRateRedThreshold={activeConfig?.profitRateRedThreshold ?? null} />
       )}
     </div>
   );
@@ -1339,7 +1391,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
 type SortField = 'totalQuantity' | 'totalSales' | 'totalProfit' | 'profitRate';
 type SortDirection = 'asc' | 'desc';
 
-function SkuSummaryTable({ summaries, platform }: { summaries: SkuSummary[]; platform: Platform }) {
+function SkuSummaryTable({ summaries, profitRateRedThreshold }: { summaries: SkuSummary[]; profitRateRedThreshold: number | null }) {
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
@@ -1412,7 +1464,7 @@ function SkuSummaryTable({ summaries, platform }: { summaries: SkuSummary[]; pla
                   <TableCell className="text-right font-mono" style={{ color: s.totalProfit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(s.totalProfit)}
                   </TableCell>
-                  <TableCell className="text-right font-mono" style={{ color: platform === 'tiktok' && s.profitRate < 25 ? '#ef4444' : s.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
+                  <TableCell className="text-right font-mono" style={{ color: profitRateRedThreshold !== null && s.profitRate < profitRateRedThreshold ? '#ef4444' : s.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
                     {s.profitRate.toFixed(1)}%
                   </TableCell>
                 </TableRow>
@@ -1426,7 +1478,7 @@ function SkuSummaryTable({ summaries, platform }: { summaries: SkuSummary[]; pla
 }
 
 // 订单明细表格
-function OrderDetailTable({ orders, platform }: { orders: CalculatedOrder[]; platform: Platform }) {
+function OrderDetailTable({ orders, profitRateRedThreshold }: { orders: CalculatedOrder[]; profitRateRedThreshold: number | null }) {
   return (
     <Card>
       <CardContent className="p-0">
@@ -1472,7 +1524,7 @@ function OrderDetailTable({ orders, platform }: { orders: CalculatedOrder[]; pla
                   <TableCell className="text-right font-mono" style={{ color: order.profit >= 0 ? '#10b981' : '#ef4444' }}>
                     {formatCurrency(order.profit)}
                   </TableCell>
-                  <TableCell className="text-right font-mono" style={{ color: platform === 'tiktok' && order.profitRate < 25 ? '#ef4444' : order.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
+                  <TableCell className="text-right font-mono" style={{ color: profitRateRedThreshold !== null && order.profitRate < profitRateRedThreshold ? '#ef4444' : order.profitRate >= 0 ? '#10b981' : '#ef4444' }}>
                     {order.profitRate.toFixed(1)}%
                   </TableCell>
                 </TableRow>
