@@ -769,10 +769,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const formulaContext: Record<string, number> = {
           quantity,
           unitPrice: countOnlyQuantity ? 0 : unitPrice,
-          platformDiscount,
-          platformFee,
-          shippingFee,
-          commission,
+          platformDiscount: countOnlyQuantity && platform === 'tiktok' ? 0 : platformDiscount,
+          platformFee: countOnlyQuantity && platform === 'tiktok' ? 0 : platformFee,
+          shippingFee: countOnlyQuantity && platform === 'tiktok' ? 0 : shippingFee,
+          commission: countOnlyQuantity && platform === 'tiktok' ? 0 : commission,
           purchasePrice: countOnlyQuantity ? 0 : purchasePrice,
         };
 

@@ -624,7 +624,9 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
             订单过滤规则
           </CardTitle>
           <CardDescription className="text-xs">
-            设置排除规则：被排除的订单不计算单量也不计算销售额；或设置只统计数量不计金额的规则
+            {platform === 'tiktok'
+              ? '设置排除规则：被排除的订单不计算单量也不计算销售额；或设置只统计数量不计任何金额的规则'
+              : '设置排除规则：被排除的订单不计算单量也不计算销售额；或设置只统计数量不计金额的规则（仍统计各项服务费）'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -699,7 +701,11 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
 
           {/* 规则3：只统计数量不统计金额的状态 */}
           <div className="space-y-2">
-            <Label className="text-xs font-medium text-slate-700">只统计数量不统计金额的订单</Label>
+            <Label className="text-xs font-medium text-slate-700">
+              {platform === 'tiktok'
+                ? '只统计数量不统计任何金额的订单'
+                : '只统计数量不统计金额的订单（仍统计各项服务费）'}
+            </Label>
             <div className="flex items-center gap-2">
               <Select
                 value={config?.filterRules?.quantityOnlyStatusField || ''}
