@@ -6,6 +6,8 @@ import { useAppStore } from '@/store';
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const loadAllData = useAppStore((s) => s.loadAllData);
   const isLoading = useAppStore((s) => s.isLoading);
+  const dbConnected = useAppStore((s) => s.dbConnected);
+  const retryConnection = useAppStore((s) => s.retryConnection);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -13,10 +15,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     const timeout = setTimeout(() => {
       if (mounted && !loaded) {
-        console.warn('数据加载超时，跳过加载直接进入');
+        console.warn('数据加载超时，使用本地缓存数据');
         setLoaded(true);
       }
-    }, 10000); // 10秒超时
+    }, 8000);
 
     loadAllData()
       .then(() => {
@@ -30,7 +32,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (mounted) {
           clearTimeout(timeout);
           setError(String(err?.message || err));
-          setLoaded(true); // 即使失败也进入应用
+          setLoaded(true);
         }
       });
 
@@ -68,5 +70,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {!dbConnected && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between">
+          <span className="text-amber-700 text-xs">
+            云端数据库暂未连接，数据仅保存在本地浏览器。请前往 Supabase 控制台重启 PostgREST 服务后刷新页面。
+          </span>
+          <button
+            className="text-xs px-3 py-1 bg-amber-600 text-white rounded hover:bg-amber-500 transition-colors ml-3 shrink-0"
+            onClick={() => retryConnection()}
+          >
+            重试连接
+          </button>
+        </div>
+      )}
+      {children}
+    </>
+  );
 }

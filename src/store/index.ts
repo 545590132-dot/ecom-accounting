@@ -12,6 +12,31 @@ import {
 } from '@/types';
 import * as dbOps from '@/lib/db';
 
+// ====== 自动持久化到 localStorage（双重备份） ======
+interface LocalPersistState {
+  skuMappings: SkuMapping[];
+  shopNames: ShopName[];
+  savedConfigs: Record<Platform, SavedCalcConfig[]>;
+  rawOrders: Record<Platform, RawOrderData[]>;
+  activeConfigId?: Record<Platform, string>;
+}
+
+function persistToLocal(state: LocalPersistState) {
+  dbOps.saveAllToLocalStorage({
+    skuMappings: state.skuMappings,
+    shopNames: state.shopNames,
+    savedConfigs: state.savedConfigs,
+    rawOrders: state.rawOrders,
+    activeConfigId: state.activeConfigId,
+  });
+}
+
+let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersist(state: LocalPersistState) {
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => persistToLocal(state), 500);
+}
+
 // ====== 工具函数 ======
 const generateId = () => Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
 
@@ -102,9 +127,11 @@ interface AppState {
   // 加载状态
   isLoading: boolean;
   isSaving: boolean;
+  dbConnected: boolean;
 
   // 数据加载
   loadAllData: () => Promise<void>;
+  retryConnection: () => Promise<void>;
 
   // SKU 映射
   addSkuMapping: (mapping: Omit<SkuMapping, 'id'>) => Promise<void>;
@@ -157,6 +184,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   availableHeaders: { shopee: [], lazada: [], tiktok: [] },
   isLoading: false,
   isSaving: false,
+  dbConnected: false,
 
   // ====== 数据加载 ======
   loadAllData: async () => {
@@ -170,8 +198,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const rawOrders: Record<Platform, RawOrderData[]> = { shopee: [], lazada: [], tiktok: [] };
       const availableHeaders: Record<Platform, string[]> = { shopee: [], lazada: [], tiktok: [] };
 
+      let anySuccess = false;
+
+      // 先测试 Supabase 连接
+      anySuccess = await dbOps.testConnection();
+
       for (const p of platforms) {
-        // 使用 allSettled 防止单个请求失败阻塞整个加载
         const results = await Promise.allSettled([
           dbOps.getSkuMappings(p),
           dbOps.getShopNames(p),
@@ -184,7 +216,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const configs = results[2].status === 'fulfilled' ? results[2].value : [];
         const files = results[3].status === 'fulfilled' ? results[3].value : [];
 
-        // 记录失败信息
+        if (results.some(r => r.status === 'fulfilled' && (r.value as unknown[]).length >= 0)) {
+          anySuccess = true;
+        }
+
         for (const r of results) {
           if (r.status === 'rejected') {
             console.warn(`加载 ${p} 数据失败:`, r.reason);
@@ -199,21 +234,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
           savedConfigs[p].push(config);
         }
 
-        // 如果某平台无配置，创建默认
         if (savedConfigs[p].length === 0) {
           const defaultConfig = createDefaultConfig(p);
           savedConfigs[p] = [defaultConfig];
           activeConfigId[p] = defaultConfig.id;
-          // 异步保存默认配置，不阻塞加载
           dbOps.upsertCalcConfig(defaultConfig, p, true).catch((e) =>
             console.warn(`保存 ${p} 默认配置失败:`, e)
           );
         } else {
-          // 使用第一个配置作为活跃配置
           activeConfigId[p] = savedConfigs[p][0].id;
         }
 
-        // 组织订单文件
         rawOrders[p] = files;
         const headersSet = new Set<string>();
         for (const file of files) {
@@ -229,12 +260,60 @@ export const useAppStore = create<AppState>()((set, get) => ({
         availableHeaders[p] = Array.from(headersSet).filter(Boolean);
       }
 
-      set({ skuMappings: allSkuMappings, shopNames: allShopNames, savedConfigs, activeConfigId, rawOrders, availableHeaders });
+      // 如果 Supabase 全部失败，从 localStorage 恢复
+      if (!anySuccess) {
+        console.warn('Supabase 全部失败，从 localStorage 恢复数据');
+        const localData = dbOps.loadAllFromLocalStorage();
+        if (localData) {
+          const restoredActiveConfigId: Record<Platform, string> = { shopee: '', lazada: '', tiktok: '' };
+          for (const p of platforms) {
+            const configs = localData.savedConfigs[p];
+            if (configs && configs.length > 0) {
+              restoredActiveConfigId[p] = localData.activeConfigId?.[p] || configs[0].id;
+            }
+          }
+          set({
+            skuMappings: localData.skuMappings,
+            shopNames: localData.shopNames,
+            savedConfigs: localData.savedConfigs,
+            activeConfigId: restoredActiveConfigId,
+            rawOrders: localData.rawOrders,
+            availableHeaders,
+            dbConnected: false,
+          });
+          return;
+        }
+      }
+
+      set({
+        skuMappings: allSkuMappings,
+        shopNames: allShopNames,
+        savedConfigs,
+        activeConfigId,
+        rawOrders,
+        availableHeaders,
+        dbConnected: anySuccess,
+      });
     } catch (error) {
       console.error('加载数据失败:', error);
+      // 尝试从 localStorage 恢复
+      const localData = dbOps.loadAllFromLocalStorage();
+      if (localData) {
+        set({
+          skuMappings: localData.skuMappings,
+          shopNames: localData.shopNames,
+          savedConfigs: localData.savedConfigs,
+          rawOrders: localData.rawOrders,
+          dbConnected: false,
+        });
+      }
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  retryConnection: async () => {
+    await get().loadAllData();
   },
 
   // ====== SKU 映射 ======
@@ -279,7 +358,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const id = generateId();
     const newName = { ...name, id };
     set((s) => ({ shopNames: [...s.shopNames, newName] }));
-    await dbOps.upsertShopName(newName);
+    await dbOps.insertShopName(newName);
   },
 
   addShopNamesBatch: async (platform, names) => {
@@ -291,7 +370,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
     set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
     for (const name of newNames) {
-      await dbOps.upsertShopName(name);
+      await dbOps.insertShopName(name);
     }
   },
 
@@ -300,7 +379,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       shopNames: s.shopNames.map((n) => (n.id === id ? { ...n, name } : n)),
     }));
     const current = get().shopNames.find((n) => n.id === id);
-    if (current) await dbOps.upsertShopName(current);
+    if (current) await dbOps.insertShopName(current);
   },
 
   deleteShopName: async (id) => {
@@ -814,3 +893,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     return Array.from(skuMap.values());
   },
 }));
+
+// ====== 自动持久化到 localStorage ======
+useAppStore.subscribe((state) => {
+  schedulePersist(state);
+});
