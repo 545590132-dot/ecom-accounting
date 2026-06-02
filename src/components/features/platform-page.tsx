@@ -606,13 +606,13 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
             订单过滤规则
           </CardTitle>
           <CardDescription className="text-xs">
-            设置哪些订单不计入统计，或只统计数量不计金额
+            设置排除规则：被排除的订单不计算单量也不计算销售额；或设置只统计数量不计金额的规则
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {/* 规则1：根据字段排除指定状态 */}
           <div className="space-y-2">
-            <Label className="text-xs font-medium text-slate-700">排除指定状态的订单</Label>
+            <Label className="text-xs font-medium text-slate-700">排除指定状态的订单（不计算单量也不计算销售额）</Label>
             <div className="flex items-center gap-2">
               <Select
                 value={config?.filterRules?.excludeStatusField || ''}
@@ -659,7 +659,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                   })}
                 </div>
                 <p className="text-xs text-slate-400">
-                  点击选择不计入统计的状态（已选 {(config?.filterRules?.excludeStatusValues || []).length} 项）
+                  点击选择要排除的状态，排除后不计算单量也不计算销售额（已选 {(config?.filterRules?.excludeStatusValues || []).length} 项）
                 </p>
               </div>
             )}
