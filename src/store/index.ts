@@ -33,6 +33,7 @@ const EMPTY_FIELD_MAPPING: CalculationConfig['fieldMapping'] = {
   platformDiscount: '',
   platformFee: '',
   shippingFee: '',
+  commission: '',
 };
 
 // 字段默认别名（中文名称）
@@ -44,6 +45,7 @@ const DEFAULT_FIELD_ALIASES: Record<string, string> = {
   platformDiscount: '平台折扣',
   platformFee: '平台手续费',
   shippingFee: '运费',
+  commission: '佣金',
 };
 
 const DEFAULT_FORMULAS: CalculationConfig['formulas'] = {
@@ -58,8 +60,8 @@ function createDefaultConfig(platform: Platform): SavedCalcConfig {
   return {
     id: generateId(),
     name: '默认方案',
-    fieldMapping: { ...EMPTY_FIELD_MAPPING },
-    fieldAliases: { ...DEFAULT_FIELD_ALIASES },
+    fieldMapping: { ...EMPTY_FIELD_MAPPING, commission: '' },
+    fieldAliases: { ...DEFAULT_FIELD_ALIASES, commission: '佣金' },
     formulas: { ...DEFAULT_FORMULAS },
     filterRules: { ...DEFAULT_FILTER_RULES },
     countQuantityAsRows: platform === 'lazada',
@@ -526,6 +528,7 @@ export const useAppStore = create<AppState>()(
             // 从字段映射中获取原始数值
             const platformFee = getNumValue(mapping.platformFee);
             const shippingFee = getNumValue(mapping.shippingFee);
+            const commission = getNumValue(mapping.commission);
             const rawQuantity = getNumValue(mapping.quantity);
             const quantity = config.countQuantityAsRows ? 1 : rawQuantity; // Lazada等平台按计数
             const unitPrice = getNumValue(mapping.unitPrice);
@@ -587,6 +590,7 @@ export const useAppStore = create<AppState>()(
               platformDiscount,
               platformFee,
               shippingFee,
+              commission,
               purchasePrice,
             };
 
@@ -821,12 +825,17 @@ export const useAppStore = create<AppState>()(
               if (cfgRecord2.profitRateRedThreshold === undefined) {
                 cfgRecord2.profitRateRedThreshold = platformKey === 'tiktok' ? 25 : null;
               }
+              // 补充 commission 字段映射
+              const cfgFm = cfgRecord2.fieldMapping as Record<string, string> | undefined;
+              if (cfgFm && cfgFm.commission === undefined) {
+                cfgFm.commission = '';
+              }
             }
           }
         }
         return ps;
       },
-      version: 11,
+      version: 12,
     }
   )
 );

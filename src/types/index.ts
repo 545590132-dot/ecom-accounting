@@ -30,10 +30,11 @@ export interface CalculationConfig {
     platformDiscount: string; // 平台折扣字段名
     platformFee: string; // 平台手续费字段名
     shippingFee: string; // 运费字段名
+    commission: string; // 佣金字段名
     [key: string]: string; // 允许自定义扩展字段
   };
   // 计算公式（JavaScript 表达式，变量来自字段映射值 + purchasePrice）
-  // 可用变量：quantity, unitPrice, platformDiscount, platformFee, shippingFee（字段映射值）
+  // 可用变量：quantity, unitPrice, platformDiscount, platformFee, shippingFee, commission（字段映射值）
   //           purchasePrice（来自 SKU 映射的采购单价）
   //           以及已计算的其他公式结果（按定义顺序：totalAmount → netAmount → profit → profitRate）
   formulas: {
