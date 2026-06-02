@@ -171,12 +171,25 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const availableHeaders: Record<Platform, string[]> = { shopee: [], lazada: [], tiktok: [] };
 
       for (const p of platforms) {
-        const [skus, shops, configs, files] = await Promise.all([
+        // 使用 allSettled 防止单个请求失败阻塞整个加载
+        const results = await Promise.allSettled([
           dbOps.getSkuMappings(p),
           dbOps.getShopNames(p),
           dbOps.getCalcConfigs(p),
           dbOps.getOrderFiles(p),
         ]);
+
+        const skus = results[0].status === 'fulfilled' ? results[0].value : [];
+        const shops = results[1].status === 'fulfilled' ? results[1].value : [];
+        const configs = results[2].status === 'fulfilled' ? results[2].value : [];
+        const files = results[3].status === 'fulfilled' ? results[3].value : [];
+
+        // 记录失败信息
+        for (const r of results) {
+          if (r.status === 'rejected') {
+            console.warn(`加载 ${p} 数据失败:`, r.reason);
+          }
+        }
 
         allSkuMappings.push(...skus);
         allShopNames.push(...shops);
@@ -191,7 +204,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
           const defaultConfig = createDefaultConfig(p);
           savedConfigs[p] = [defaultConfig];
           activeConfigId[p] = defaultConfig.id;
-          await dbOps.upsertCalcConfig(defaultConfig, p, true);
+          // 异步保存默认配置，不阻塞加载
+          dbOps.upsertCalcConfig(defaultConfig, p, true).catch((e) =>
+            console.warn(`保存 ${p} 默认配置失败:`, e)
+          );
         } else {
           // 使用第一个配置作为活跃配置
           activeConfigId[p] = savedConfigs[p][0].id;
