@@ -27,11 +27,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
   BarChart3, Package, TrendingUp, TrendingDown,
   ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X, Store, Filter,
-  ArrowUpDown, ArrowUp, ArrowDown,
+  ArrowUpDown, ArrowUp, ArrowDown, ChevronDown,
 } from 'lucide-react';
 
 // 平台数据导入组件
@@ -854,7 +857,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   const skuSummaries = calculateSkuSummaries(platform);
   const platformConfig = PLATFORM_CONFIG[platform];
   const [viewMode, setViewMode] = useState<'orders' | 'sku'>('sku');
-  const [filterShop, setFilterShop] = useState<string>('__all__');
+  const [filterShops, setFilterShops] = useState<string[]>([]); // 多选店铺，空数组=全部
   const [filterYearMonth, setFilterYearMonth] = useState<string>('__all__');
   const [showDebug, setShowDebug] = useState(false);
 
@@ -868,7 +871,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
 
   // 筛选订单
   const filteredOrders = summary.orders.filter((o) => {
-    if (filterShop !== '__all__' && o.shopName !== filterShop) return false;
+    if (filterShops.length > 0 && !filterShops.includes(o.shopName)) return false;
     if (filterYearMonth !== '__all__' && o.orderDate !== filterYearMonth) return false;
     return true;
   });
@@ -935,7 +938,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   }
 
   // 筛选条件是否生效
-  const isFiltering = filterShop !== '__all__' || filterYearMonth !== '__all__';
+  const isFiltering = filterShops.length > 0 || filterYearMonth !== '__all__';
 
   return (
     <div className="space-y-6">
@@ -946,26 +949,93 @@ function PlatformStats({ platform }: { platform: Platform }) {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-muted-foreground">筛选：</span>
             </div>
-            {/* 店铺名称筛选 */}
+            {/* 店铺名称筛选 - 多选 */}
             <div className="flex items-center gap-2">
               <label className="text-sm text-muted-foreground shrink-0">店铺名称</label>
-              <Select value={filterShop} onValueChange={setFilterShop}>
-                <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue placeholder="全部店铺" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">全部店铺</SelectItem>
-                  {platformShops.map((s) => (
-                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-                  ))}
-                  {/* 也添加订单中实际出现但未在店铺列表中的名称 */}
-                  {Array.from(new Set(summary.orders.map((o) => o.shopName).filter(Boolean)))
-                    .filter((name) => !platformShops.some((s) => s.name === name))
-                    .map((name) => (
-                      <SelectItem key={name} value={name}>{name}</SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 w-auto min-w-[160px] justify-between font-normal">
+                    {filterShops.length === 0
+                      ? '全部店铺'
+                      : filterShops.length === 1
+                        ? filterShops[0]
+                        : `已选 ${filterShops.length} 个店铺`}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[220px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="搜索店铺..." />
+                    <CommandList>
+                      <CommandEmpty>未找到店铺</CommandEmpty>
+                      <CommandGroup>
+                        {/* 全选/取消全选 */}
+                        <CommandItem
+                          onSelect={() => setFilterShops([])}
+                          className="cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={filterShops.length === 0}
+                            className="mr-2"
+                          />
+                          <span className="font-medium">全部店铺</span>
+                        </CommandItem>
+                        {platformShops.map((s) => (
+                          <CommandItem
+                            key={s.id}
+                            onSelect={() => {
+                              setFilterShops((prev) =>
+                                prev.includes(s.name)
+                                  ? prev.filter((n) => n !== s.name)
+                                  : [...prev, s.name]
+                              );
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={filterShops.includes(s.name)}
+                              className="mr-2"
+                            />
+                            {s.name}
+                          </CommandItem>
+                        ))}
+                        {/* 也添加订单中实际出现但未在店铺列表中的名称 */}
+                        {Array.from(new Set(summary.orders.map((o) => o.shopName).filter(Boolean)))
+                          .filter((name) => !platformShops.some((s) => s.name === name))
+                          .map((name) => (
+                            <CommandItem
+                              key={name}
+                              onSelect={() => {
+                                setFilterShops((prev) =>
+                                  prev.includes(name)
+                                    ? prev.filter((n) => n !== name)
+                                    : [...prev, name]
+                                );
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Checkbox
+                                checked={filterShops.includes(name)}
+                                className="mr-2"
+                              />
+                              {name}
+                            </CommandItem>
+                          ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {filterShops.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs text-muted-foreground"
+                  onClick={() => setFilterShops([])}
+                >
+                  清除
+                </Button>
+              )}
             </div>
             {/* 年月筛选 */}
             <div className="flex items-center gap-2">
@@ -987,7 +1057,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setFilterShop('__all__'); setFilterYearMonth('__all__'); }}
+                onClick={() => { setFilterShops([]); setFilterYearMonth('__all__'); }}
               >
                 重置筛选
               </Button>
