@@ -81,7 +81,7 @@ export function downloadSkuTemplate(): void {
 // 导入 SKU 映射数据
 export function importSkuFromExcel(
   rows: Record<string, string | number>[]
-): Omit<SkuMapping, 'id'>[] {
+): Omit<SkuMapping, 'id' | 'platform'>[] {
   return rows.map((row) => ({
     sku: String(row['SKU编码'] ?? row['sku'] ?? row['SKU'] ?? ''),
     productName: String(row['商品名称'] ?? row['productName'] ?? ''),

@@ -37,6 +37,17 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, Hash,
 } from 'lucide-react';
 
+type SortField = 'totalQuantity' | 'totalSales' | 'totalProfit' | 'profitRate';
+
+function SortIcon({ field, sortField, sortDirection }: { field: SortField; sortField: SortField; sortDirection: 'asc' | 'desc' }) {
+  if (sortField !== field) {
+    return <ArrowUpDown className="ml-1 inline h-3 w-3 text-muted-foreground/50" />;
+  }
+  return sortDirection === 'asc'
+    ? <ArrowUp className="ml-1 inline h-3 w-3 text-emerald-600" />
+    : <ArrowDown className="ml-1 inline h-3 w-3 text-emerald-600" />;
+}
+
 // 平台数据导入组件
 function PlatformDataImport({ platform }: { platform: Platform }) {
   const { rawOrders, importOrders, deleteOrderFile, clearOrders } = useAppStore();
@@ -70,7 +81,6 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
       const { headers, rows } = await parseExcelFile(pendingFile);
       if (rows.length === 0) return;
       importOrders(platform, {
-        platform,
         fileName: pendingFile.name,
         headers,
         rows,
@@ -281,6 +291,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const configs = savedConfigs[platform];
   const currentId = activeConfigId[platform];
   const platformShopNames = shopNames.filter((s) => s.platform === platform);
+
   const [editingFormula, setEditingFormula] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newConfigName, setNewConfigName] = useState('');
@@ -297,7 +308,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
 
   // 获取字段别名（自定义名称），优先使用 fieldAliases，否则 fallback 到默认中文名
   const getFieldAlias = (key: string): string => {
-    return config.fieldAliases?.[key] || key;
+    return config?.fieldAliases?.[key] || key;
   };
 
   const formulaLabels: Record<string, string> = {
@@ -344,6 +355,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   // 公式中可使用的变量列表（来源于字段映射中已映射的字段 + 系统计算字段）
   const formulaVariables = useMemo(() => {
     const vars: { key: string; label: string; mapped: boolean }[] = [];
+    if (!config) return vars;
     // 来自字段映射的字段（使用自定义别名）
     for (const key of fieldKeys) {
       if (config.fieldMapping[key]) {
@@ -360,7 +372,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
     vars.push({ key: 'netAmount', label: formulaLabels.netAmount + '（公式计算结果）', mapped: true });
     vars.push({ key: 'profit', label: formulaLabels.profit + '（公式计算结果）', mapped: true });
     return vars;
-  }, [config.fieldMapping, config.fieldAliases]);
+  }, [config?.fieldMapping, config?.fieldAliases]);
 
   const handleSaveAs = () => {
     const name = newConfigName.trim();
@@ -387,6 +399,8 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
     setRenamingId(null);
     setRenameValue('');
   };
+
+  if (!config) return null;
 
   return (
     <div className="space-y-6">
@@ -1388,7 +1402,6 @@ function PlatformStats({ platform }: { platform: Platform }) {
 }
 
 // 商品统计表格（按商品名称分类）
-type SortField = 'totalQuantity' | 'totalSales' | 'totalProfit' | 'profitRate';
 type SortDirection = 'asc' | 'desc';
 
 function SkuSummaryTable({ summaries, profitRateRedThreshold }: { summaries: SkuSummary[]; profitRateRedThreshold: number | null }) {
@@ -1414,15 +1427,7 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold }: { summaries: Sku
     });
   }, [summaries, sortField, sortDirection]);
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) {
-      return <ArrowUpDown className="ml-1 inline h-3 w-3 text-muted-foreground/50" />;
-    }
-    return sortDirection === 'asc'
-      ? <ArrowUp className="ml-1 inline h-3 w-3 text-emerald-600" />
-      : <ArrowDown className="ml-1 inline h-3 w-3 text-emerald-600" />;
-  };
-
+  const currentSortField = sortField ?? 'totalSales';
   const sortableCls = "cursor-pointer select-none hover:text-foreground transition-colors";
 
   return (
@@ -1435,19 +1440,19 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold }: { summaries: Sku
                 <TableHead>商品名称</TableHead>
                 <TableHead className="w-[100px]">店铺名称</TableHead>
                 <TableHead className={`w-[80px] text-right ${sortableCls}`} onClick={() => handleSort('totalQuantity')}>
-                  销量<SortIcon field="totalQuantity" />
+                  销量<SortIcon field="totalQuantity" sortField={currentSortField} sortDirection={sortDirection} />
                 </TableHead>
                 <TableHead className={`w-[130px] text-right ${sortableCls}`} onClick={() => handleSort('totalSales')}>
-                  总价<SortIcon field="totalSales" />
+                  总价<SortIcon field="totalSales" sortField={currentSortField} sortDirection={sortDirection} />
                 </TableHead>
                 <TableHead className="w-[110px] text-right">平均单价</TableHead>
                 <TableHead className="w-[110px] text-right">采购单价</TableHead>
                 <TableHead className="w-[120px] text-right">采购成本</TableHead>
                 <TableHead className={`w-[120px] text-right ${sortableCls}`} onClick={() => handleSort('totalProfit')}>
-                  利润<SortIcon field="totalProfit" />
+                  利润<SortIcon field="totalProfit" sortField={currentSortField} sortDirection={sortDirection} />
                 </TableHead>
                 <TableHead className={`w-[80px] text-right ${sortableCls}`} onClick={() => handleSort('profitRate')}>
-                  利润率<SortIcon field="profitRate" />
+                  利润率<SortIcon field="profitRate" sortField={currentSortField} sortDirection={sortDirection} />
                 </TableHead>
               </TableRow>
             </TableHeader>

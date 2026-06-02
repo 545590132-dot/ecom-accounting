@@ -15,6 +15,7 @@ export interface SkuMapping {
   sku: string; // 原始 SKU 编号
   productName: string; // 商品名称
   purchasePrice: number; // 采购单价
+  platform: Platform; // 所属平台
   category?: string; // 商品分类（可选）
 }
 
@@ -61,6 +62,7 @@ export interface OrderFilterRules {
 export interface SavedCalcConfig {
   id: string;
   name: string; // 配置名称，如"默认方案"、"含运费利润"
+  platform: Platform; // 所属平台
   fieldMapping: CalculationConfig['fieldMapping'];
   fieldAliases: Record<string, string>; // 字段别名，用户自定义的字段名称，如 { orderNo: '订单编号', sku: '商品编码' }
   formulas: CalculationConfig['formulas'];
@@ -95,6 +97,7 @@ export interface CalculatedOrder {
   quantity: number;
   unitPrice: number;
   platformDiscount: number; // 平台折扣
+  commission: number; // 佣金
   totalAmount: number;
   platformFee: number;
   shippingFee: number;

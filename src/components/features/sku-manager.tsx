@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store';
 import { parseExcelFile, downloadSkuTemplate, importSkuFromExcel } from '@/lib/excel';
-import { formatCurrency } from '@/types';
+import { formatCurrency, PLATFORM_CONFIG } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Upload, Download, Plus, Trash2, Edit3, Search, Package } from 'lucide-react';
-import type { SkuMapping } from '@/types';
+import type { SkuMapping, Platform } from '@/types';
 
 export function SkuManager() {
   const { skuMappings, addSkuMapping, updateSkuMapping, deleteSkuMapping, importSkuMappings, clearSkuMappings } = useAppStore();
@@ -20,10 +20,14 @@ export function SkuManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<SkuMapping>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState<Platform>('shopee');
   const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredMappings = skuMappings.filter(
+  // Filter by selected platform
+  const platformMappings = skuMappings.filter((m: SkuMapping) => m.platform === selectedPlatform);
+
+  const filteredMappings = platformMappings.filter(
     (m: SkuMapping) =>
       m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
       m.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -37,17 +41,17 @@ export function SkuManager() {
       const { rows } = await parseExcelFile(file);
       const mappings = importSkuFromExcel(rows);
       if (mappings.length > 0) {
-        importSkuMappings(mappings);
+        importSkuMappings(mappings.map((m) => ({ ...m, platform: selectedPlatform })));
       }
     } catch (err) {
       console.error('导入失败:', err);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [importSkuMappings]);
+  }, [importSkuMappings, selectedPlatform]);
 
   const handleAdd = () => {
     if (!newSku.sku || !newSku.productName) return;
-    addSkuMapping(newSku);
+    addSkuMapping({ ...newSku, platform: selectedPlatform });
     setNewSku({ sku: '', productName: '', purchasePrice: 0, category: '' });
     setDialogOpen(false);
   };
@@ -74,14 +78,33 @@ export function SkuManager() {
     <div className="space-y-6">
       {/* 操作栏 */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="搜索 SKU / 商品名称 / 分类..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9"
-          />
+        <div className="flex items-center gap-3">
+          {/* 平台切换 */}
+          <div className="flex gap-1">
+            {(['shopee', 'lazada', 'tiktok'] as Platform[]).map((p) => {
+              const pc = PLATFORM_CONFIG[p];
+              return (
+                <Button
+                  key={p}
+                  size="sm"
+                  variant={selectedPlatform === p ? 'default' : 'outline'}
+                  style={selectedPlatform === p ? { backgroundColor: pc.color, color: '#fff' } : {}}
+                  onClick={() => setSelectedPlatform(p)}
+                >
+                  {pc.name}
+                </Button>
+              );
+            })}
+          </div>
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="搜索 SKU / 商品名称 / 分类..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
         <div className="flex gap-2 flex-wrap">
           <input
@@ -170,13 +193,16 @@ export function SkuManager() {
 
       {/* 数据统计 */}
       <div className="flex gap-4 text-sm text-muted-foreground">
-        <span>共 <span className="font-medium text-foreground">{skuMappings.length}</span> 条 SKU 映射</span>
-        {filteredMappings.length !== skuMappings.length && (
+        <span>共 <span className="font-medium text-foreground">{platformMappings.length}</span> 条 {PLATFORM_CONFIG[selectedPlatform].name} SKU 映射</span>
+        {filteredMappings.length !== platformMappings.length && (
           <span>筛选显示 <span className="font-medium text-foreground">{filteredMappings.length}</span> 条</span>
         )}
-        {skuMappings.length > 0 && (
-          <Button variant="ghost" size="sm" className="h-auto p-0 text-destructive hover:text-destructive" onClick={clearSkuMappings}>
-            清空全部
+        {platformMappings.length > 0 && (
+          <Button variant="ghost" size="sm" className="h-auto p-0 text-destructive hover:text-destructive" onClick={async () => {
+            const ids = platformMappings.map((m) => m.id);
+            for (const id of ids) await deleteSkuMapping(id);
+          }}>
+            清空当前平台
           </Button>
         )}
       </div>
@@ -187,9 +213,9 @@ export function SkuManager() {
           {filteredMappings.length === 0 ? (
             <div className="py-16 text-center text-muted-foreground">
               <Package className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p>{skuMappings.length === 0 ? '暂无 SKU 映射数据' : '没有匹配的搜索结果'}</p>
+              <p>{platformMappings.length === 0 ? '暂无 SKU 映射数据' : '没有匹配的搜索结果'}</p>
               <p className="text-xs mt-1">
-                {skuMappings.length === 0 ? '点击「导入 SKU」或「新增 SKU」添加数据' : '尝试修改搜索条件'}
+                {platformMappings.length === 0 ? `点击「导入 SKU」或「新增 SKU」添加 ${PLATFORM_CONFIG[selectedPlatform].name} 数据` : '尝试修改搜索条件'}
               </p>
             </div>
           ) : (
