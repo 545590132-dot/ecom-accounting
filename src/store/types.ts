@@ -32,6 +32,7 @@ export interface AppState {
   addSkuMapping: (mapping: Omit<SkuMapping, 'id'>) => Promise<void>;
   updateSkuMapping: (id: string, mapping: Partial<SkuMapping>) => Promise<void>;
   deleteSkuMapping: (id: string) => Promise<void>;
+  deleteSkuMappingsBatch: (ids: string[]) => Promise<void>;
   importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => Promise<void>;
   clearSkuMappings: () => Promise<void>;
 

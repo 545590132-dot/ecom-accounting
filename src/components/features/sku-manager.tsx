@@ -15,7 +15,7 @@ import { Upload, Download, Plus, Trash2, Edit3, Search, Package } from 'lucide-r
 import type { SkuMapping, Platform } from '@/types';
 
 export function SkuManager() {
-  const { skuMappings, addSkuMapping, updateSkuMapping, deleteSkuMapping, importSkuMappings, clearSkuMappings } = useAppStore();
+  const { skuMappings, addSkuMapping, updateSkuMapping, deleteSkuMapping, deleteSkuMappingsBatch, importSkuMappings, clearSkuMappings } = useAppStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<SkuMapping>>({});
@@ -199,7 +199,7 @@ export function SkuManager() {
         )}
         {platformMappings.length > 0 && (
           <Button variant="ghost" size="sm" className="h-auto p-0 text-destructive hover:text-destructive" onClick={() => {
-            platformMappings.forEach((m) => deleteSkuMapping(m.id));
+            deleteSkuMappingsBatch(platformMappings.map((m) => m.id));
           }}>
             清空当前平台
           </Button>

@@ -137,6 +137,7 @@ interface AppState {
   addSkuMapping: (mapping: Omit<SkuMapping, 'id'>) => Promise<void>;
   updateSkuMapping: (id: string, mapping: Partial<SkuMapping>) => Promise<void>;
   deleteSkuMapping: (id: string) => Promise<void>;
+  deleteSkuMappingsBatch: (ids: string[]) => Promise<void>;
   importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => Promise<void>;
   clearSkuMappings: () => Promise<void>;
 
@@ -335,6 +336,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   deleteSkuMapping: async (id) => {
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
     dbOps.deleteSkuMapping(id).catch(console.error);
+  },
+
+  deleteSkuMappingsBatch: async (ids: string[]) => {
+    const idSet = new Set(ids);
+    set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
+    Promise.all(ids.map((id: string) => dbOps.deleteSkuMapping(id))).catch(console.error);
   },
 
   importSkuMappings: async (mappings) => {
