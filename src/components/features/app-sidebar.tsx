@@ -8,7 +8,7 @@ import type { Platform } from '@/types';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Package, ChevronLeft, ChevronRight,
-  Calculator, Store,
+  Calculator, Store, LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -32,7 +32,7 @@ const NAV_ITEMS = [
 
 const PLATFORM_ITEMS: Platform[] = ['shopee', 'lazada', 'tiktok'];
 
-export function AppSidebar() {
+export function AppSidebar({ onLogout }: { onLogout: () => void }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -114,8 +114,16 @@ export function AppSidebar() {
         })}
       </nav>
 
-      {/* Collapse button */}
-      <div className="border-t p-2 shrink-0">
+      {/* Logout + Collapse button */}
+      <div className="border-t p-2 space-y-1 shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-center text-slate-500 hover:text-red-600 hover:bg-red-50"
+          onClick={onLogout}
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
         <Button
           variant="ghost"
           size="sm"
