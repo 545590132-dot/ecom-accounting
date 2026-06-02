@@ -25,8 +25,17 @@ export async function parseExcelFile(
           return;
         }
 
-        const headers = Object.keys(jsonData[0]);
-        resolve({ headers, rows: jsonData });
+        // 对表头 key 做 trim，确保与 availableHeaders 一致
+        const rawHeaders = Object.keys(jsonData[0]);
+        const headers = rawHeaders.map(h => h.trim());
+        const rows = jsonData.map(row => {
+          const newRow: Record<string, string | number> = {};
+          for (const [key, value] of Object.entries(row)) {
+            newRow[key.trim()] = value;
+          }
+          return newRow;
+        });
+        resolve({ headers, rows });
       } catch (err) {
         reject(err);
       }

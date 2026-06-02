@@ -463,7 +463,12 @@ export const useAppStore = create<AppState>()(
 
             const getNumValue = (fieldName: string): number => {
               if (!fieldName) return 0;
-              const val = row[fieldName];
+              // 优先精确匹配，否则尝试 trim 后的 key
+              let val: string | number | undefined = row[fieldName];
+              if (val === undefined || val === null || val === '') {
+                const trimmedKey = Object.keys(row).find(k => k.trim() === fieldName);
+                val = trimmedKey ? row[trimmedKey] : undefined;
+              }
               if (val === undefined || val === null || val === '') return 0;
               const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.\-]/g, ''));
               return isNaN(num) ? 0 : num;
@@ -471,7 +476,12 @@ export const useAppStore = create<AppState>()(
 
             const getStrValue = (fieldName: string): string => {
               if (!fieldName) return '';
-              const val = row[fieldName];
+              // 优先精确匹配，否则尝试 trim 后的 key
+              let val: string | number | undefined = row[fieldName];
+              if (val === undefined || val === null) {
+                const trimmedKey = Object.keys(row).find(k => k.trim() === fieldName);
+                val = trimmedKey ? row[trimmedKey] : undefined;
+              }
               return val !== undefined && val !== null ? String(val) : '';
             };
 
@@ -485,10 +495,16 @@ export const useAppStore = create<AppState>()(
             // ====== 订单过滤逻辑 ======
             const filterRules = config.filterRules;
 
-            // 规则①：指定字段下的某些状态不计入统计
+            // 规则①：指定字段下的某些状态不计入统计（不计算单量也不计算销售额）
             if (filterRules.excludeStatusField && filterRules.excludeStatusValues.length > 0) {
-              const fieldValue = getStrValue(filterRules.excludeStatusField);
-              if (filterRules.excludeStatusValues.includes(fieldValue)) continue;
+              const rawValue = getStrValue(filterRules.excludeStatusField).trim();
+              // 忽略大小写和空格差异进行匹配
+              const shouldExclude = filterRules.excludeStatusValues.some(
+                v => v.trim().toLowerCase() === rawValue.toLowerCase()
+              );
+              if (shouldExclude) {
+                continue;
+              }
             }
 
             // 规则②：订单金额为0的订单不计入统计（寄样订单）
@@ -500,8 +516,11 @@ export const useAppStore = create<AppState>()(
             // 规则③：指定字段下的某些状态只统计数量不统计金额
             let countOnlyQuantity = false;
             if (filterRules.quantityOnlyStatusField && filterRules.quantityOnlyStatusValues.length > 0) {
-              const fieldValue = getStrValue(filterRules.quantityOnlyStatusField);
-              if (filterRules.quantityOnlyStatusValues.includes(fieldValue)) {
+              const rawValue = getStrValue(filterRules.quantityOnlyStatusField).trim();
+              const shouldCountOnly = filterRules.quantityOnlyStatusValues.some(
+                v => v.trim().toLowerCase() === rawValue.toLowerCase()
+              );
+              if (shouldCountOnly) {
                 countOnlyQuantity = true;
               }
             }
