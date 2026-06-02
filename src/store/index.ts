@@ -62,6 +62,7 @@ function createDefaultConfig(platform: Platform): SavedCalcConfig {
     fieldAliases: { ...DEFAULT_FIELD_ALIASES },
     formulas: { ...DEFAULT_FORMULAS },
     filterRules: { ...DEFAULT_FILTER_RULES },
+    countQuantityAsRows: platform === 'lazada',
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -104,6 +105,8 @@ interface AppState {
   // 更新当前激活配置的字段映射
   updateFieldMapping: (platform: Platform, field: string, value: string) => void;
   updateFilterRules: (platform: Platform, rules: Partial<OrderFilterRules>) => void;
+  // 设置数量计算方式（求和/计数）
+  setCountQuantityAsRows: (platform: Platform, value: boolean) => void;
   // 更新当前激活配置的字段别名
   updateFieldAlias: (platform: Platform, field: string, alias: string) => void;
   // 更新当前激活配置的计算公式
@@ -228,6 +231,7 @@ export const useAppStore = create<AppState>()(
             fieldAliases: activeConfig ? { ...activeConfig.fieldAliases } : { ...DEFAULT_FIELD_ALIASES },
             formulas: activeConfig ? { ...activeConfig.formulas } : { ...DEFAULT_FORMULAS },
             filterRules: activeConfig ? { ...activeConfig.filterRules } : { ...DEFAULT_FILTER_RULES },
+            countQuantityAsRows: activeConfig ? activeConfig.countQuantityAsRows : platform === 'lazada',
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -311,6 +315,21 @@ export const useAppStore = create<AppState>()(
                       filterRules: { ...c.filterRules, ...rules },
                       updatedAt: Date.now(),
                     }
+                  : c
+              ),
+            },
+          };
+        }),
+
+      setCountQuantityAsRows: (platform, value) =>
+        set((state) => {
+          const activeId = state.activeConfigId[platform];
+          return {
+            savedConfigs: {
+              ...state.savedConfigs,
+              [platform]: state.savedConfigs[platform].map((c) =>
+                c.id === activeId
+                  ? { ...c, countQuantityAsRows: value, updatedAt: Date.now() }
                   : c
               ),
             },
@@ -489,7 +508,8 @@ export const useAppStore = create<AppState>()(
             // 从字段映射中获取原始数值
             const platformFee = getNumValue(mapping.platformFee);
             const shippingFee = getNumValue(mapping.shippingFee);
-            const quantity = getNumValue(mapping.quantity);
+            const rawQuantity = getNumValue(mapping.quantity);
+            const quantity = config.countQuantityAsRows ? 1 : rawQuantity; // Lazada等平台按计数
             const unitPrice = getNumValue(mapping.unitPrice);
             const platformDiscount = getNumValue(mapping.platformDiscount);
 
@@ -692,6 +712,7 @@ export const useAppStore = create<AppState>()(
               fieldAliases: { ...DEFAULT_FIELD_ALIASES },
               formulas: { ...cfg.formulas },
               filterRules: { ...DEFAULT_FILTER_RULES },
+              countQuantityAsRows: platform === 'lazada',
               createdAt: Date.now(),
               updatedAt: Date.now(),
             }];
@@ -704,7 +725,7 @@ export const useAppStore = create<AppState>()(
         // 为已存在的 savedConfigs 补充缺失字段
         if (ps.savedConfigs) {
           const saved = ps.savedConfigs as Record<string, SavedCalcConfig[]>;
-          for (const configs of Object.values(saved)) {
+          for (const [platformKey, configs] of Object.entries(saved)) {
             for (const cfg of configs) {
               if (cfg.fieldAliases === undefined) {
                 (cfg as unknown as Record<string, unknown>).fieldAliases = { ...DEFAULT_FIELD_ALIASES };
@@ -772,12 +793,17 @@ export const useAppStore = create<AppState>()(
                   fr.quantityOnlyStatusValues = fr.quantityOnlyStatusValues ? String(fr.quantityOnlyStatusValues).split(',').filter(Boolean) : [];
                 }
               }
+              // 补充 countQuantityAsRows
+              const cfgRecord2 = cfg as unknown as Record<string, unknown>;
+              if (cfgRecord2.countQuantityAsRows === undefined) {
+                cfgRecord2.countQuantityAsRows = platformKey === 'lazada';
+              }
             }
           }
         }
         return ps;
       },
-      version: 9,
+      version: 10,
     }
   )
 );

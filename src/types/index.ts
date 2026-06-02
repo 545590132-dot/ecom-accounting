@@ -64,6 +64,7 @@ export interface SavedCalcConfig {
   fieldAliases: Record<string, string>; // 字段别名，用户自定义的字段名称，如 { orderNo: '订单编号', sku: '商品编码' }
   formulas: CalculationConfig['formulas'];
   filterRules: OrderFilterRules; // 订单过滤规则
+  countQuantityAsRows: boolean; // 数量按计数（每行=1）而非求和，适用于Lazada等平台
   createdAt: number;
   updatedAt: number;
 }

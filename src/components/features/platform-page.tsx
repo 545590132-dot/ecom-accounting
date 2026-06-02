@@ -34,7 +34,7 @@ import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
   BarChart3, Package, TrendingUp, TrendingDown,
   ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X, Store, Filter,
-  ArrowUpDown, ArrowUp, ArrowDown, ChevronDown,
+  ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, Hash,
 } from 'lucide-react';
 
 // 平台数据导入组件
@@ -272,7 +272,7 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
 function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const {
     savedConfigs, activeConfigId, getActiveConfig,
-    updateFieldMapping, updateFieldAlias, updateFormula, updateFilterRules, availableHeaders, rawOrders, skuMappings, shopNames,
+    updateFieldMapping, updateFieldAlias, updateFormula, updateFilterRules, setCountQuantityAsRows, availableHeaders, rawOrders, skuMappings, shopNames,
     saveCurrentConfig, switchConfig, deleteConfig, renameConfig,
   } = useAppStore();
   const config = getActiveConfig(platform);
@@ -735,6 +735,48 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
                 </p>
               </div>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 数量计算方式 */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Hash className="h-4 w-4" />
+            数量计算方式
+            <Badge variant="outline" className="text-xs font-normal">{config.name}</Badge>
+          </CardTitle>
+          <CardDescription className="mt-1">
+            选择"数量"字段的计算方式：求和（将每行的数量值累加）或计数（每行计为1，不读取数量字段的值）。Lazada 平台通常使用计数方式。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name={`quantityMode-${platform}`}
+                checked={!config.countQuantityAsRows}
+                onChange={() => {
+                  setCountQuantityAsRows(platform, false);
+                }}
+                className="accent-slate-800"
+              />
+              <span className="text-sm">求和 — 累加每行数量字段的值</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name={`quantityMode-${platform}`}
+                checked={config.countQuantityAsRows}
+                onChange={() => {
+                  setCountQuantityAsRows(platform, true);
+                }}
+                className="accent-slate-800"
+              />
+              <span className="text-sm">计数 — 每行计为1（适用于Lazada）</span>
+            </label>
           </div>
         </CardContent>
       </Card>
