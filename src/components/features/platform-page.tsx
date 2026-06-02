@@ -293,7 +293,7 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
   const [activeFormulaKey, setActiveFormulaKey] = useState<string | null>(null);
 
   // 字段 key 列表（用于字段映射区域渲染和公式变量参考）
-  const fieldKeys = ['orderNo', 'sku', 'quantity', 'unitPrice', 'platformDiscount', 'platformFee', 'shippingFee'];
+  const fieldKeys = ['orderNo', 'sku', 'quantity', 'unitPrice', 'platformDiscount', 'platformFee', 'shippingFee', 'commission'];
 
   // 获取字段别名（自定义名称），优先使用 fieldAliases，否则 fallback 到默认中文名
   const getFieldAlias = (key: string): string => {
