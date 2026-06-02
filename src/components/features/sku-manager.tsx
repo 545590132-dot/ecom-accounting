@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { useAppStore } from '@/store';
 import { parseExcelFile, downloadSkuTemplate, importSkuFromExcel } from '@/lib/excel';
 import { formatCurrency, PLATFORM_CONFIG } from '@/types';
@@ -15,7 +15,13 @@ import { Upload, Download, Plus, Trash2, Edit3, Search, Package } from 'lucide-r
 import type { SkuMapping, Platform } from '@/types';
 
 export function SkuManager() {
-  const { skuMappings, addSkuMapping, updateSkuMapping, deleteSkuMapping, deleteSkuMappingsBatch, importSkuMappings, clearSkuMappings } = useAppStore();
+  // 使用 selector 只订阅需要的数据和函数，避免无关状态变化触发重渲染
+  const skuMappings = useAppStore((s) => s.skuMappings);
+  const addSkuMapping = useAppStore((s) => s.addSkuMapping);
+  const updateSkuMapping = useAppStore((s) => s.updateSkuMapping);
+  const deleteSkuMapping = useAppStore((s) => s.deleteSkuMapping);
+  const deleteSkuMappingsBatch = useAppStore((s) => s.deleteSkuMappingsBatch);
+  const importSkuMappings = useAppStore((s) => s.importSkuMappings);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<SkuMapping>>({});
@@ -24,14 +30,20 @@ export function SkuManager() {
   const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Filter by selected platform
-  const platformMappings = skuMappings.filter((m: SkuMapping) => m.platform === selectedPlatform);
+  // 用 useMemo 缓存过滤结果，避免每次渲染都重新计算
+  const platformMappings = useMemo(
+    () => skuMappings.filter((m: SkuMapping) => m.platform === selectedPlatform),
+    [skuMappings, selectedPlatform]
+  );
 
-  const filteredMappings = platformMappings.filter(
-    (m: SkuMapping) =>
-      m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (m.category && m.category.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredMappings = useMemo(
+    () => platformMappings.filter(
+      (m: SkuMapping) =>
+        m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        m.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (m.category && m.category.toLowerCase().includes(searchTerm.toLowerCase()))
+    ),
+    [platformMappings, searchTerm]
   );
 
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -17,7 +17,6 @@ interface LocalPersistState {
   skuMappings: SkuMapping[];
   shopNames: ShopName[];
   savedConfigs: Record<Platform, SavedCalcConfig[]>;
-  rawOrders: Record<Platform, RawOrderData[]>;
   activeConfigId?: Record<Platform, string>;
 }
 
@@ -26,15 +25,26 @@ function persistToLocal(state: LocalPersistState) {
     skuMappings: state.skuMappings,
     shopNames: state.shopNames,
     savedConfigs: state.savedConfigs,
-    rawOrders: state.rawOrders,
+    rawOrders: { shopee: [], lazada: [], tiktok: [] }, // rawOrders 数据量大，不在每次变更时持久化
     activeConfigId: state.activeConfigId,
   });
 }
 
-let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+let _persistTimer: number | null = null;
+let _isIdleCallback = false;
 function schedulePersist(state: LocalPersistState) {
-  if (_persistTimer) clearTimeout(_persistTimer);
-  _persistTimer = setTimeout(() => persistToLocal(state), 500);
+  if (_persistTimer !== null) {
+    if (_isIdleCallback) cancelIdleCallback(_persistTimer);
+    else clearTimeout(_persistTimer);
+  }
+  const doPersist = () => { _persistTimer = null; _isIdleCallback = false; persistToLocal(state); };
+  if (typeof requestIdleCallback !== 'undefined') {
+    _isIdleCallback = true;
+    _persistTimer = requestIdleCallback(doPersist, { timeout: 2000 });
+  } else {
+    _isIdleCallback = false;
+    _persistTimer = setTimeout(doPersist, 500) as unknown as number;
+  }
 }
 
 // ====== 工具函数 ======
