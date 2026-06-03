@@ -21,7 +21,7 @@ export function SkuManager() {
   const addSkuMapping = useAppStore((s) => s.addSkuMapping);
   const updateSkuMapping = useAppStore((s) => s.updateSkuMapping);
   const deleteSkuMapping = useAppStore((s) => s.deleteSkuMapping);
-  const deleteSkuMappingsBatch = useAppStore((s) => s.deleteSkuMappingsBatch);
+  const clearSkuMappingsByPlatform = useAppStore((s) => s.clearSkuMappingsByPlatform);
   const importSkuMappings = useAppStore((s) => s.importSkuMappings);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,17 +88,13 @@ export function SkuManager() {
     setDialogOpen(false);
   };
 
-  const handleClearPlatform = useCallback(async () => {
+  const handleClearPlatform = useCallback(() => {
     if (clearing) return;
-    const ids = platformMappings.map((m) => m.id);
-    if (ids.length === 0) return;
+    if (platformMappings.length === 0) return;
     setClearing(true);
-    try {
-      deleteSkuMappingsBatch(ids);
-    } finally {
-      setClearing(false);
-    }
-  }, [clearing, platformMappings, deleteSkuMappingsBatch]);
+    clearSkuMappingsByPlatform(selectedPlatform);
+    setTimeout(() => setClearing(false), 300);
+  }, [clearing, platformMappings.length, selectedPlatform, clearSkuMappingsByPlatform]);
 
   const startEdit = (mapping: SkuMapping) => {
     setEditingId(mapping.id);

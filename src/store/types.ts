@@ -33,6 +33,7 @@ export interface AppState {
   updateSkuMapping: (id: string, mapping: Partial<SkuMapping>) => void;
   deleteSkuMapping: (id: string) => void;
   deleteSkuMappingsBatch: (ids: string[]) => void;
+  clearSkuMappingsByPlatform: (platform: Platform) => void;
   importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => void;
   clearSkuMappings: () => void;
 

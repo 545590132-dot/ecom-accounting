@@ -158,6 +158,7 @@ interface AppState {
   updateSkuMapping: (id: string, mapping: Partial<SkuMapping>) => void;
   deleteSkuMapping: (id: string) => void;
   deleteSkuMappingsBatch: (ids: string[]) => void;
+  clearSkuMappingsByPlatform: (platform: Platform) => void;
   importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => void;
   clearSkuMappings: () => void;
 
@@ -376,10 +377,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   deleteSkuMappingsBatch: (ids: string[]) => {
-    const prev = get().skuMappings.filter((m) => ids.includes(m.id));
     const idSet = new Set(ids);
+    const prev = get().skuMappings.filter((m) => idSet.has(m.id));
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
     enqueueWrite('deleteSkuMappingsBatch', () => dbOps.deleteSkuMappingsBatch(ids), () =>
+      set((s) => ({ skuMappings: [...s.skuMappings, ...prev] }))
+    );
+  },
+
+  /** 按平台清空 SKU 映射 — 单条 SQL 请求，极快 */
+  clearSkuMappingsByPlatform: (platform: Platform) => {
+    const prev = get().skuMappings.filter((m) => m.platform === platform);
+    set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.platform !== platform) }));
+    enqueueWrite('clearSkuMappingsByPlatform', () => dbOps.deleteSkuMappingsByPlatform(platform), () =>
       set((s) => ({ skuMappings: [...s.skuMappings, ...prev] }))
     );
   },
@@ -396,8 +406,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   clearSkuMappings: () => {
     const prev = get().skuMappings;
     set({ skuMappings: [] });
-    const ids = prev.map((m) => m.id);
-    enqueueWrite('clearSkuMappings', () => dbOps.deleteSkuMappingsBatch(ids), () =>
+    // 按平台分别删除（每个平台一条请求）
+    const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
+    enqueueWrite('clearSkuMappings', async () => {
+      const results = await Promise.all(platforms.map((p) => dbOps.deleteSkuMappingsByPlatform(p)));
+      return results.every(Boolean);
+    }, () =>
       set({ skuMappings: prev })
     );
   },
@@ -453,8 +467,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   clearShopNames: (platform) => {
     const prev = get().shopNames.filter((n) => n.platform === platform);
     set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
-    const ids = prev.map((n) => n.id);
-    enqueueWrite('clearShopNames', () => dbOps.deleteShopNamesBatch(ids), () =>
+    enqueueWrite('clearShopNames', () => dbOps.deleteShopNamesByPlatform(platform), () =>
       set((s) => ({ shopNames: [...s.shopNames, ...prev] }))
     );
   },
@@ -741,8 +754,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       rawOrders: { ...s.rawOrders, [platform]: [] },
       availableHeaders: { ...s.availableHeaders, [platform]: [] },
     }));
-    const ids = prev.map((f) => f.id);
-    enqueueWrite('clearOrders', () => dbOps.deleteOrderFilesBatch(ids), () =>
+    enqueueWrite('clearOrders', () => dbOps.deleteOrderFilesByPlatform(platform), () =>
       set((s) => ({
         rawOrders: { ...s.rawOrders, [platform]: prev },
         availableHeaders: { ...s.availableHeaders, [platform]: prevHeaders },

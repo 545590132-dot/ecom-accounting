@@ -81,23 +81,41 @@ async function safeOp<T>(op: () => Promise<T>, fallback: T, label: string): Prom
   }
 }
 
+// ====== 通用分页查询（突破 Supabase 1000 行默认限制） ======
+
+async function fetchAll<T>(
+  query: any,
+  mapRow: (row: Record<string, unknown>) => T,
+  pageSize = 1000
+): Promise<T[]> {
+  const allRows: T[] = [];
+  let offset = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
+    if (error) { console.error('fetchAll error:', error); break; }
+    const rows = (data || []) as Record<string, unknown>[];
+    allRows.push(...rows.map(mapRow));
+    hasMore = rows.length === pageSize;
+    offset += pageSize;
+  }
+  return allRows;
+}
+
 // ====== SKU 映射 ======
 
 export async function getSkuMappings(platform: Platform): Promise<SkuMapping[]> {
   return safeOp(async () => {
-    const { data, error } = await supabase
-      .from('sku_mappings')
-      .select('*')
-      .eq('platform', platform)
-      .limit(10000);
-    if (error) { console.error('getSkuMappings error:', error); return []; }
-    return (data || []).map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      sku: row.sku as string,
-      productName: row.product_name as string,
-      purchasePrice: Number(row.purchase_price),
-      platform: row.platform as Platform,
-    }));
+    return fetchAll(
+      supabase.from('sku_mappings').select('*').eq('platform', platform),
+      (row: Record<string, unknown>) => ({
+        id: row.id as string,
+        sku: row.sku as string,
+        productName: row.product_name as string,
+        purchasePrice: Number(row.purchase_price),
+        platform: row.platform as Platform,
+      })
+    );
   }, [], 'getSkuMappings');
 }
 
@@ -126,10 +144,10 @@ export async function deleteSkuMapping(id: string): Promise<boolean> {
 export async function deleteSkuMappingsBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
-    // 分批并行删除，每批 500
+    // 分批并行删除，每批 100（避免 URL 过长）
     const batches: string[][] = [];
-    for (let i = 0; i < ids.length; i += 500) {
-      batches.push(ids.slice(i, i + 500));
+    for (let i = 0; i < ids.length; i += 100) {
+      batches.push(ids.slice(i, i + 100));
     }
     const results = await Promise.all(
       batches.map((batch) => supabase.from('sku_mappings').delete().in('id', batch))
@@ -138,6 +156,15 @@ export async function deleteSkuMappingsBatch(ids: string[]): Promise<boolean> {
     if (failed?.error) { console.error('deleteSkuMappingsBatch error:', failed.error); return false; }
     return true;
   }, false, 'deleteSkuMappingsBatch');
+}
+
+/** 按平台删除所有 SKU 映射 — 单条请求，无需传 ID 列表 */
+export async function deleteSkuMappingsByPlatform(platform: Platform): Promise<boolean> {
+  return safeOp(async () => {
+    const { error } = await supabase.from('sku_mappings').delete().eq('platform', platform);
+    if (error) { console.error('deleteSkuMappingsByPlatform error:', error); return false; }
+    return true;
+  }, false, 'deleteSkuMappingsByPlatform');
 }
 
 export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<boolean> {
@@ -168,18 +195,15 @@ export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<bo
 
 export async function getShopNames(platform: Platform): Promise<ShopName[]> {
   return safeOp(async () => {
-    const { data, error } = await supabase
-      .from('shop_names')
-      .select('*')
-      .eq('platform', platform)
-      .limit(10000);
-    if (error) { console.error('getShopNames error:', error); return []; }
-    return (data || []).map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      name: row.name as string,
-      platform: row.platform as Platform,
-      createdAt: Number(row.created_at) || Date.now(),
-    }));
+    return fetchAll(
+      supabase.from('shop_names').select('*').eq('platform', platform),
+      (row: Record<string, unknown>) => ({
+        id: row.id as string,
+        name: row.name as string,
+        platform: row.platform as Platform,
+        createdAt: Number(row.created_at) || Date.now(),
+      })
+    );
   }, [], 'getShopNames');
 }
 
@@ -208,8 +232,8 @@ export async function deleteShopNamesBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
     const batches: string[][] = [];
-    for (let i = 0; i < ids.length; i += 500) {
-      batches.push(ids.slice(i, i + 500));
+    for (let i = 0; i < ids.length; i += 100) {
+      batches.push(ids.slice(i, i + 100));
     }
     const results = await Promise.all(
       batches.map((batch) => supabase.from('shop_names').delete().in('id', batch))
@@ -218,6 +242,15 @@ export async function deleteShopNamesBatch(ids: string[]): Promise<boolean> {
     if (failed?.error) { console.error('deleteShopNamesBatch error:', failed.error); return false; }
     return true;
   }, false, 'deleteShopNamesBatch');
+}
+
+/** 按平台删除所有店铺 — 单条请求 */
+export async function deleteShopNamesByPlatform(platform: Platform): Promise<boolean> {
+  return safeOp(async () => {
+    const { error } = await supabase.from('shop_names').delete().eq('platform', platform);
+    if (error) { console.error('deleteShopNamesByPlatform error:', error); return false; }
+    return true;
+  }, false, 'deleteShopNamesByPlatform');
 }
 
 export async function upsertShopNamesBatch(shops: ShopName[]): Promise<boolean> {
@@ -304,13 +337,10 @@ function mapConfigToRow(config: SavedCalcConfig, isActive: boolean): Record<stri
 
 export async function getCalcConfigs(platform: Platform): Promise<SavedCalcConfig[]> {
   return safeOp(async () => {
-    const { data, error } = await supabase
-      .from('calc_configs')
-      .select('*')
-      .eq('platform', platform)
-      .limit(10000);
-    if (error) { console.error('getCalcConfigs error:', error); return []; }
-    return (data || []).map((row: Record<string, unknown>) => mapRowToConfig(row));
+    return fetchAll(
+      supabase.from('calc_configs').select('*').eq('platform', platform),
+      (row: Record<string, unknown>) => mapRowToConfig(row)
+    );
   }, [], 'getCalcConfigs');
 }
 
@@ -334,28 +364,31 @@ export async function deleteCalcConfig(id: string): Promise<boolean> {
 
 export async function getOrderFiles(platform: Platform): Promise<RawOrderData[]> {
   return safeOp(async () => {
-    const { data: files, error: fileError } = await supabase
-      .from('raw_order_files')
-      .select('*')
-      .eq('platform', platform)
-      .limit(10000);
-    if (fileError) { console.error('getOrderFiles error:', fileError); return []; }
-    if (!files || files.length === 0) return [];
+    // 分页查询文件
+    const files = await fetchAll(
+      supabase.from('raw_order_files').select('*').eq('platform', platform),
+      (row: Record<string, unknown>) => row
+    );
+    if (files.length === 0) return [];
 
     const fileIds = files.map((f: Record<string, unknown>) => f.id as string);
 
-    const { data: rows, error: rowsError } = await supabase
-      .from('order_rows')
-      .select('*')
-      .in('file_id', fileIds)
-      .limit(100000);
-    if (rowsError) { console.error('getOrderRows error:', rowsError); return []; }
+    // 分页查询行数据（按文件 ID 批量）
+    const allRows: Record<string, unknown>[] = [];
+    const idBatchSize = 100; // IN 子句最多 100 个 ID
+    for (let i = 0; i < fileIds.length; i += idBatchSize) {
+      const idBatch = fileIds.slice(i, i + idBatchSize);
+      const batchRows = await fetchAll(
+        supabase.from('order_rows').select('*').in('file_id', idBatch),
+        (row: Record<string, unknown>) => row
+      );
+      allRows.push(...batchRows);
+    }
 
     const rowsByFile: Record<string, Record<string, string | number>[]> = {};
-    for (const row of (rows || [])) {
-      const r = row as Record<string, unknown>;
-      const fileId = r.file_id as string;
-      const rowData = (r.row_data as Record<string, string | number>) || {};
+    for (const row of allRows) {
+      const fileId = row.file_id as string;
+      const rowData = (row.row_data as Record<string, string | number>) || {};
       if (!rowsByFile[fileId]) rowsByFile[fileId] = [];
       rowsByFile[fileId].push(rowData);
     }
@@ -421,8 +454,8 @@ export async function deleteOrderFilesBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
     const batches: string[][] = [];
-    for (let i = 0; i < ids.length; i += 500) {
-      batches.push(ids.slice(i, i + 500));
+    for (let i = 0; i < ids.length; i += 100) {
+      batches.push(ids.slice(i, i + 100));
     }
     // 并行删除 order_rows 和 raw_order_files
     const results = await Promise.all(
@@ -436,6 +469,27 @@ export async function deleteOrderFilesBatch(ids: string[]): Promise<boolean> {
     if (failed?.error) { console.error('deleteOrderFilesBatch error:', failed.error); return false; }
     return true;
   }, false, 'deleteOrderFilesBatch');
+}
+
+/** 按平台删除所有订单文件及行数据 — 2 条请求 */
+export async function deleteOrderFilesByPlatform(platform: Platform): Promise<boolean> {
+  return safeOp(async () => {
+    // 先获取该平台所有文件 ID
+    const { data: files } = await supabase.from('raw_order_files').select('id').eq('platform', platform);
+    const fileIds = (files || []).map((f: Record<string, unknown>) => f.id as string);
+    // 删除 order_rows (按 file_id 批量)
+    if (fileIds.length > 0) {
+      const batches: string[][] = [];
+      for (let i = 0; i < fileIds.length; i += 100) {
+        batches.push(fileIds.slice(i, i + 100));
+      }
+      await Promise.all(batches.map((batch) => supabase.from('order_rows').delete().in('file_id', batch)));
+    }
+    // 删除 raw_order_files (按平台)
+    const { error } = await supabase.from('raw_order_files').delete().eq('platform', platform);
+    if (error) { console.error('deleteOrderFilesByPlatform error:', error); return false; }
+    return true;
+  }, false, 'deleteOrderFilesByPlatform');
 }
 
 // ====== 数据同步：将 localStorage 数据推送到 Supabase ======
