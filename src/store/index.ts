@@ -32,10 +32,10 @@ function persistToLocal(state: LocalPersistState) {
 
 let _persistTimer: number | null = null;
 
-// ====== 后台 Supabase 写入队列 ======
+// ====== 后台 Supabase 同步（fire-and-forget） ======
 // UI 只管本地状态（即时响应），Supabase 写入在后台异步执行
-// 失败时回滚本地状态
-const _pendingWrites: Array<{ label: string; execute: () => Promise<boolean>; rollback: () => void }> = [];
+// 失败时自动重试，最多 3 次，仍失败则放弃（下次 loadAllData 会重新同步）
+const _pendingWrites: Array<{ label: string; execute: () => Promise<boolean>; retries: number }> = [];
 let _writing = false;
 
 async function _processWriteQueue() {
@@ -43,18 +43,29 @@ async function _processWriteQueue() {
   _writing = true;
   while (_pendingWrites.length > 0) {
     const task = _pendingWrites.shift()!;
-    const ok = await task.execute();
-    if (!ok) {
-      console.error(`${task.label} 失败，回滚本地状态`);
-      task.rollback();
+    try {
+      const ok = await task.execute();
+      if (!ok && task.retries < 3) {
+        // 失败了，放回队列稍后重试
+        task.retries++;
+        _pendingWrites.push(task);
+        // 等待 1 秒后重试
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } catch {
+      if (task.retries < 3) {
+        task.retries++;
+        _pendingWrites.push(task);
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
   }
   _writing = false;
 }
 
-function enqueueWrite(label: string, execute: () => Promise<boolean>, rollback: () => void) {
-  _pendingWrites.push({ label, execute, rollback });
-  _processWriteQueue();
+function syncToRemote(label: string, execute: () => Promise<boolean>) {
+  _pendingWrites.push({ label, execute, retries: 0 });
+  _processWriteQueue(); // 不 await，fire-and-forget
 }
 
 // ====== 工具函数 ======
@@ -347,9 +358,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const id = generateId();
     const newMapping = { ...mapping, id };
     set((s) => ({ skuMappings: [...s.skuMappings, newMapping] }));
-    enqueueWrite('addSkuMapping', () => dbOps.upsertSkuMapping(newMapping), () =>
-      set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }))
-    );
+    syncToRemote('addSkuMapping', () => dbOps.upsertSkuMapping(newMapping));
   },
 
   updateSkuMapping: (id, mapping) => {
@@ -358,9 +367,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const updated = get().skuMappings.find((m) => m.id === id);
     if (updated) {
       const capturedPrev = prev;
-      enqueueWrite('updateSkuMapping', () => dbOps.upsertSkuMapping(updated as SkuMapping), () => {
-        if (capturedPrev) set((s) => ({ skuMappings: s.skuMappings.map((m) => (m.id === id ? capturedPrev : m)) }));
-      });
+      syncToRemote('updateSkuMapping', () => dbOps.upsertSkuMapping(updated as SkuMapping));
     }
   },
 
@@ -368,9 +375,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const prev = get().skuMappings.find((m) => m.id === id);
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
     if (prev) {
-      enqueueWrite('deleteSkuMapping', () => dbOps.deleteSkuMapping(id), () =>
-        set((s) => ({ skuMappings: [...s.skuMappings, prev!] }))
-      );
+      syncToRemote('deleteSkuMapping', () => dbOps.deleteSkuMapping(id));
     } else {
       dbOps.deleteSkuMapping(id).catch(console.error);
     }
@@ -380,27 +385,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const idSet = new Set(ids);
     const prev = get().skuMappings.filter((m) => idSet.has(m.id));
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
-    enqueueWrite('deleteSkuMappingsBatch', () => dbOps.deleteSkuMappingsBatch(ids), () =>
-      set((s) => ({ skuMappings: [...s.skuMappings, ...prev] }))
-    );
+    syncToRemote('deleteSkuMappingsBatch', () => dbOps.deleteSkuMappingsBatch(ids));
   },
 
   /** 按平台清空 SKU 映射 — 单条 SQL 请求，极快 */
   clearSkuMappingsByPlatform: (platform: Platform) => {
     const prev = get().skuMappings.filter((m) => m.platform === platform);
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.platform !== platform) }));
-    enqueueWrite('clearSkuMappingsByPlatform', () => dbOps.deleteSkuMappingsByPlatform(platform), () =>
-      set((s) => ({ skuMappings: [...s.skuMappings, ...prev] }))
-    );
+    syncToRemote('clearSkuMappingsByPlatform', () => dbOps.deleteSkuMappingsByPlatform(platform));
   },
 
   importSkuMappings: (mappings) => {
     const newMappings = mappings.map((m) => ({ ...m, id: generateId() }));
     const newIds = new Set(newMappings.map((m) => m.id));
     set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
-    enqueueWrite('importSkuMappings', () => dbOps.upsertSkuMappingsBatch(newMappings), () =>
-      set((s) => ({ skuMappings: s.skuMappings.filter((m) => !newIds.has(m.id)) }))
-    );
+    syncToRemote('importSkuMappings', () => dbOps.upsertSkuMappingsBatch(newMappings));
   },
 
   clearSkuMappings: () => {
@@ -408,12 +407,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set({ skuMappings: [] });
     // 按平台分别删除（每个平台一条请求）
     const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
-    enqueueWrite('clearSkuMappings', async () => {
+    syncToRemote('clearSkuMappings', async () => {
       const results = await Promise.all(platforms.map((p) => dbOps.deleteSkuMappingsByPlatform(p)));
       return results.every(Boolean);
-    }, () =>
-      set({ skuMappings: prev })
-    );
+    });
   },
 
   // ====== 店铺名称（全部同步返回，Supabase 写入后台队列执行） ======
@@ -421,9 +418,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const id = generateId();
     const newName = { ...name, id };
     set((s) => ({ shopNames: [...s.shopNames, newName] }));
-    enqueueWrite('addShopName', () => dbOps.insertShopName(newName), () =>
-      set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }))
-    );
+    syncToRemote('addShopName', () => dbOps.insertShopName(newName));
   },
 
   addShopNamesBatch: (platform, names) => {
@@ -435,9 +430,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
     const newIds = new Set(newNames.map((n) => n.id));
     set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
-    enqueueWrite('addShopNamesBatch', () => dbOps.upsertShopNamesBatch(newNames), () =>
-      set((s) => ({ shopNames: s.shopNames.filter((n) => !newIds.has(n.id)) }))
-    );
+    syncToRemote('addShopNamesBatch', () => dbOps.upsertShopNamesBatch(newNames));
   },
 
   updateShopName: (id, name) => {
@@ -446,9 +439,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const current = get().shopNames.find((n) => n.id === id);
     if (current) {
       const capturedPrev = prev;
-      enqueueWrite('updateShopName', () => dbOps.insertShopName(current), () => {
-        if (capturedPrev) set((s) => ({ shopNames: s.shopNames.map((n) => (n.id === id ? capturedPrev : n)) }));
-      });
+      syncToRemote('updateShopName', () => dbOps.insertShopName(current));
     }
   },
 
@@ -456,9 +447,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const prev = get().shopNames.find((n) => n.id === id);
     set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
     if (prev) {
-      enqueueWrite('deleteShopName', () => dbOps.deleteShopName(id), () =>
-        set((s) => ({ shopNames: [...s.shopNames, prev!] }))
-      );
+      syncToRemote('deleteShopName', () => dbOps.deleteShopName(id));
     } else {
       dbOps.deleteShopName(id).catch(console.error);
     }
@@ -467,9 +456,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   clearShopNames: (platform) => {
     const prev = get().shopNames.filter((n) => n.platform === platform);
     set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
-    enqueueWrite('clearShopNames', () => dbOps.deleteShopNamesByPlatform(platform), () =>
-      set((s) => ({ shopNames: [...s.shopNames, ...prev] }))
-    );
+    syncToRemote('clearShopNames', () => dbOps.deleteShopNamesByPlatform(platform));
   },
 
   // ====== 计算配置 ======
@@ -483,7 +470,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const prevActiveId = get().activeConfigId[platform];
     set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
     const configs = get().savedConfigs[platform] || [];
-    enqueueWrite('setActiveConfig', async () => {
+    syncToRemote('setActiveConfig', async () => {
       const results = await Promise.all(
         configs.map((config) => {
           const isActive = config.id === configId;
@@ -491,7 +478,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         })
       );
       return results.some((r) => r);
-    }, () => set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId } })));
+    });
   },
 
   updateFieldMapping: (platform, field, value) => {
@@ -506,9 +493,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    enqueueWrite('updateFieldMapping', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
-      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
-    );
+    syncToRemote('updateFieldMapping', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]));
   },
 
   updateFieldAlias: (platform, field, alias) => {
@@ -523,9 +508,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    enqueueWrite('updateFieldAlias', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
-      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
-    );
+    syncToRemote('updateFieldAlias', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]));
   },
 
   updateFormula: (platform, field, formula) => {
@@ -540,9 +523,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    enqueueWrite('updateFormula', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
-      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
-    );
+    syncToRemote('updateFormula', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]));
   },
 
   updateFilterRules: (platform, rules) => {
@@ -557,9 +538,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    enqueueWrite('updateFilterRules', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
-      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
-    );
+    syncToRemote('updateFilterRules', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]));
   },
 
   setCountQuantityAsRows: (platform, value) => {
@@ -574,9 +553,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    enqueueWrite('setCountQuantityAsRows', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
-      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
-    );
+    syncToRemote('setCountQuantityAsRows', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]));
   },
 
   setProfitRateRedThreshold: (platform, value) => {
@@ -591,9 +568,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    enqueueWrite('setProfitRateRedThreshold', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
-      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
-    );
+    syncToRemote('setProfitRateRedThreshold', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]));
   },
 
   saveAsNewConfig: (platform, name) => {
@@ -610,19 +585,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], newConfig] },
       activeConfigId: { ...s.activeConfigId, [platform]: newConfig.id },
     }));
-    enqueueWrite('saveAsNewConfig', async () => {
+    syncToRemote('saveAsNewConfig', async () => {
       const ok = await dbOps.upsertCalcConfig(newConfig, platform, true);
       if (ok) {
         const oldConfig = get().savedConfigs[platform].find((c) => c.id === activeConfig.id);
         if (oldConfig) await dbOps.upsertCalcConfig(oldConfig, platform, false);
       }
       return ok;
-    }, () =>
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].filter((c) => c.id !== newConfig.id) },
-        activeConfigId: { ...s.activeConfigId, [platform]: activeConfig.id },
-      }))
-    );
+    });
   },
 
   renameConfig: (platform, configId, name) => {
@@ -632,9 +602,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((s) => ({
       savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === configId ? updatedConfig : c) },
     }));
-    enqueueWrite('renameConfig', () => dbOps.upsertCalcConfig(updatedConfig, platform, configId === get().activeConfigId[platform]), () =>
-      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === configId ? prev : c) } }))
-    );
+    syncToRemote('renameConfig', () => dbOps.upsertCalcConfig(updatedConfig, platform, configId === get().activeConfigId[platform]));
   },
 
   deleteConfig: (platform, configId) => {
@@ -649,12 +617,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         : s.activeConfigId,
     }));
     if (prev) {
-      enqueueWrite('deleteConfig', () => dbOps.deleteCalcConfig(configId), () =>
-        set((s) => ({
-          savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], prev] },
-          activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId },
-        }))
-      );
+      syncToRemote('deleteConfig', () => dbOps.deleteCalcConfig(configId));
     }
   },
 
@@ -677,24 +640,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
       savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], newConfig] },
       activeConfigId: { ...s.activeConfigId, [platform]: id },
     }));
-    enqueueWrite('saveCurrentConfig', () => dbOps.upsertCalcConfig(newConfig, platform, true), () =>
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].filter((c) => c.id !== id) },
-        activeConfigId: { ...s.activeConfigId, [platform]: activeConfig.id },
-      }))
-    );
+    syncToRemote('saveCurrentConfig', () => dbOps.upsertCalcConfig(newConfig, platform, true));
   },
 
   switchConfig: (platform, configId) => {
     const prevActiveId = get().activeConfigId[platform];
     set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
     const configs = get().savedConfigs[platform] || [];
-    enqueueWrite('switchConfig', async () => {
+    syncToRemote('switchConfig', async () => {
       const results = await Promise.all(
         configs.map((config) => dbOps.upsertCalcConfig(config, platform, config.id === configId))
       );
       return results.some((r) => r);
-    }, () => set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId } })));
+    });
   },
 
   // ====== 导入数据 ======
@@ -716,7 +674,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       rawOrders: { ...s.rawOrders, [platform]: [...s.rawOrders[platform], orderFile] },
     }));
     get().mergeHeaders(platform, data.headers);
-    enqueueWrite('importOrders', async () => { const r = await dbOps.insertOrderFile(
+    syncToRemote('importOrders', async () => { const r = await dbOps.insertOrderFile(
       {
         id,
         platform,
@@ -728,9 +686,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         file_name: data.fileName || '',
       },
       data.rows
-    ); return r !== null; }, () => set((s) => ({
-      rawOrders: { ...s.rawOrders, [platform]: s.rawOrders[platform].filter((f) => f.id !== id) },
-    })));
+    ); return r !== null; });
   },
 
   deleteOrderFile: (platform, fileId) => {
@@ -739,9 +695,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       rawOrders: { ...s.rawOrders, [platform]: s.rawOrders[platform].filter((f) => f.id !== fileId) },
     }));
     if (prev) {
-      enqueueWrite('deleteOrderFile', () => dbOps.deleteOrderFile(fileId), () =>
-        set((s) => ({ rawOrders: { ...s.rawOrders, [platform]: [...s.rawOrders[platform], prev] } }))
-      );
+      syncToRemote('deleteOrderFile', () => dbOps.deleteOrderFile(fileId));
     } else {
       dbOps.deleteOrderFile(fileId).catch(console.error);
     }
@@ -754,12 +708,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       rawOrders: { ...s.rawOrders, [platform]: [] },
       availableHeaders: { ...s.availableHeaders, [platform]: [] },
     }));
-    enqueueWrite('clearOrders', () => dbOps.deleteOrderFilesByPlatform(platform), () =>
-      set((s) => ({
-        rawOrders: { ...s.rawOrders, [platform]: prev },
-        availableHeaders: { ...s.availableHeaders, [platform]: prevHeaders },
-      }))
-    );
+    syncToRemote('clearOrders', () => dbOps.deleteOrderFilesByPlatform(platform));
   },
 
   mergeHeaders: (platform, headers) => {

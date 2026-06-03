@@ -32,6 +32,7 @@ export function SkuManager() {
   const [currentPage, setCurrentPage] = useState(1);
   const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '' });
   const [clearing, setClearing] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const platformMappings = useMemo(
@@ -90,11 +91,16 @@ export function SkuManager() {
 
   const handleClearPlatform = useCallback(() => {
     if (clearing) return;
+    setConfirmClear(true);
+  }, [clearing]);
+
+  const doClearPlatform = useCallback(() => {
     if (platformMappings.length === 0) return;
     setClearing(true);
+    setConfirmClear(false);
     clearSkuMappingsByPlatform(selectedPlatform);
-    setTimeout(() => setClearing(false), 300);
-  }, [clearing, platformMappings.length, selectedPlatform, clearSkuMappingsByPlatform]);
+    setClearing(false);
+  }, [platformMappings.length, selectedPlatform, clearSkuMappingsByPlatform]);
 
   const startEdit = (mapping: SkuMapping) => {
     setEditingId(mapping.id);
@@ -253,6 +259,13 @@ export function SkuManager() {
               '清空当前平台'
             )}
           </Button>
+        )}
+        {confirmClear && (
+          <span className="flex items-center gap-2 text-xs">
+            <span className="text-destructive font-medium">确认清空 {platformMappings.length} 条？</span>
+            <Button size="sm" variant="destructive" className="h-6 px-2 text-xs" onClick={doClearPlatform}>确认</Button>
+            <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => setConfirmClear(false)}>取消</Button>
+          </span>
         )}
       </div>
 
