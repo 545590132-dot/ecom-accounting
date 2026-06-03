@@ -331,65 +331,75 @@ export const useAppStore = create<AppState>()((set, get) => ({
   addSkuMapping: async (mapping) => {
     const id = generateId();
     const newMapping = { ...mapping, id };
+    // 乐观更新：先更新本地，UI 即时响应
+    set((s) => ({ skuMappings: [...s.skuMappings, newMapping] }));
     const ok = await dbOps.upsertSkuMapping(newMapping);
-    if (ok) {
-      set((s) => ({ skuMappings: [...s.skuMappings, newMapping] }));
-    } else {
-      console.error('新增 SKU 失败，数据可能未同步');
+    if (!ok) {
+      set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
+      console.error('新增 SKU 失败，已回滚');
     }
   },
 
   updateSkuMapping: async (id, mapping) => {
-    const updated = { ...get().skuMappings.find((m) => m.id === id), ...mapping };
-    if (updated.id) {
+    const prev = get().skuMappings.find((m) => m.id === id);
+    // 乐观更新
+    set((s) => ({
+      skuMappings: s.skuMappings.map((m) => (m.id === id ? { ...m, ...mapping } : m)),
+    }));
+    const updated = get().skuMappings.find((m) => m.id === id);
+    if (updated) {
       const ok = await dbOps.upsertSkuMapping(updated as SkuMapping);
-      if (ok) {
-        set((s) => ({
-          skuMappings: s.skuMappings.map((m) => (m.id === id ? { ...m, ...mapping } : m)),
-        }));
-      } else {
-        console.error('更新 SKU 失败，数据可能未同步');
+      if (!ok && prev) {
+        set((s) => ({ skuMappings: s.skuMappings.map((m) => (m.id === id ? prev : m)) }));
+        console.error('更新 SKU 失败，已回滚');
       }
     }
   },
 
   deleteSkuMapping: async (id) => {
-    // 先删除 Supabase，成功后再更新本地状态，防止刷新后数据恢复
+    const prev = get().skuMappings.find((m) => m.id === id);
+    // 乐观删除
+    set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
     const ok = await dbOps.deleteSkuMapping(id);
-    if (ok) {
-      set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
-    } else {
-      console.error('删除 SKU 失败，数据可能未同步');
+    if (!ok && prev) {
+      set((s) => ({ skuMappings: [...s.skuMappings, prev] }));
+      console.error('删除 SKU 失败，已回滚');
     }
   },
 
   deleteSkuMappingsBatch: async (ids: string[]) => {
+    const prev = get().skuMappings.filter((m) => ids.includes(m.id));
+    const idSet = new Set(ids);
+    // 乐观批量删除
+    set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
     const ok = await dbOps.deleteSkuMappingsBatch(ids);
-    if (ok) {
-      const idSet = new Set(ids);
-      set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
-    } else {
-      console.error('批量删除 SKU 失败，数据可能未同步');
+    if (!ok) {
+      set((s) => ({ skuMappings: [...s.skuMappings, ...prev] }));
+      console.error('批量删除 SKU 失败，已回滚');
     }
   },
 
   importSkuMappings: async (mappings) => {
     const newMappings = mappings.map((m) => ({ ...m, id: generateId() }));
+    // 乐观更新
+    set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
     const ok = await dbOps.upsertSkuMappingsBatch(newMappings);
-    if (ok) {
-      set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
-    } else {
-      console.error('导入 SKU 失败，数据可能未同步');
+    if (!ok) {
+      const newIds = new Set(newMappings.map((m) => m.id));
+      set((s) => ({ skuMappings: s.skuMappings.filter((m) => !newIds.has(m.id)) }));
+      console.error('导入 SKU 失败，已回滚');
     }
   },
 
   clearSkuMappings: async () => {
-    const ids = get().skuMappings.map((m) => m.id);
+    const prev = get().skuMappings;
+    // 乐观清空
+    set({ skuMappings: [] });
+    const ids = prev.map((m) => m.id);
     const ok = await dbOps.deleteSkuMappingsBatch(ids);
-    if (ok) {
-      set({ skuMappings: [] });
-    } else {
-      console.error('清空 SKU 失败，数据可能未同步');
+    if (!ok) {
+      set({ skuMappings: prev });
+      console.error('清空 SKU 失败，已回滚');
     }
   },
 
@@ -397,11 +407,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   addShopName: async (name) => {
     const id = generateId();
     const newName = { ...name, id };
+    set((s) => ({ shopNames: [...s.shopNames, newName] }));
     const ok = await dbOps.insertShopName(newName);
-    if (ok) {
-      set((s) => ({ shopNames: [...s.shopNames, newName] }));
-    } else {
-      console.error('新增店铺失败，数据可能未同步');
+    if (!ok) {
+      set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
+      console.error('新增店铺失败，已回滚');
     }
   },
 
@@ -412,45 +422,48 @@ export const useAppStore = create<AppState>()((set, get) => ({
       platform,
       createdAt: Date.now(),
     }));
+    set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
     const ok = await dbOps.upsertShopNamesBatch(newNames);
-    if (ok) {
-      set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
-    } else {
-      console.error('批量新增店铺失败，数据可能未同步');
+    if (!ok) {
+      const newIds = new Set(newNames.map((n) => n.id));
+      set((s) => ({ shopNames: s.shopNames.filter((n) => !newIds.has(n.id)) }));
+      console.error('批量新增店铺失败，已回滚');
     }
   },
 
   updateShopName: async (id, name) => {
+    const prev = get().shopNames.find((n) => n.id === id);
+    set((s) => ({
+      shopNames: s.shopNames.map((n) => (n.id === id ? { ...n, name } : n)),
+    }));
     const current = get().shopNames.find((n) => n.id === id);
     if (current) {
-      const updated = { ...current, name };
-      const ok = await dbOps.insertShopName(updated);
-      if (ok) {
-        set((s) => ({
-          shopNames: s.shopNames.map((n) => (n.id === id ? { ...n, name } : n)),
-        }));
-      } else {
-        console.error('更新店铺失败，数据可能未同步');
+      const ok = await dbOps.insertShopName(current);
+      if (!ok && prev) {
+        set((s) => ({ shopNames: s.shopNames.map((n) => (n.id === id ? prev : n)) }));
+        console.error('更新店铺失败，已回滚');
       }
     }
   },
 
   deleteShopName: async (id) => {
+    const prev = get().shopNames.find((n) => n.id === id);
+    set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
     const ok = await dbOps.deleteShopName(id);
-    if (ok) {
-      set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
-    } else {
-      console.error('删除店铺失败，数据可能未同步');
+    if (!ok && prev) {
+      set((s) => ({ shopNames: [...s.shopNames, prev] }));
+      console.error('删除店铺失败，已回滚');
     }
   },
 
   clearShopNames: async (platform) => {
-    const ids = get().shopNames.filter((n) => n.platform === platform).map((n) => n.id);
+    const prev = get().shopNames.filter((n) => n.platform === platform);
+    set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
+    const ids = prev.map((n) => n.id);
     const ok = await dbOps.deleteShopNamesBatch(ids);
-    if (ok) {
-      set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
-    } else {
-      console.error('清空店铺失败，数据可能未同步');
+    if (!ok) {
+      set((s) => ({ shopNames: [...s.shopNames, ...prev] }));
+      console.error('清空店铺失败，已回滚');
     }
   },
 
@@ -462,7 +475,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   setActiveConfig: async (platform, configId) => {
-    // 先写数据库，再更新本地
+    const prevActiveId = get().activeConfigId[platform];
+    set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
     const configs = get().savedConfigs[platform] || [];
     const results = await Promise.all(
       configs.map((config) => {
@@ -470,137 +484,135 @@ export const useAppStore = create<AppState>()((set, get) => ({
         return dbOps.upsertCalcConfig(config, platform, isActive);
       })
     );
-    if (results.some((r) => r)) {
-      set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
-    } else {
-      console.error('切换配置失败，数据可能未同步');
+    if (!results.some((r) => r)) {
+      set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId } }));
+      console.error('切换配置失败，已回滚');
     }
   },
 
   updateFieldMapping: async (platform, field, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    // 先计算更新后的 config
-    const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (!config) return;
-    const updatedConfig = { ...config, fieldMapping: { ...config.fieldMapping, [field]: value }, updatedAt: Date.now() };
+    const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
+    if (!prev) return;
+    const updatedConfig = { ...prev, fieldMapping: { ...prev.fieldMapping, [field]: value }, updatedAt: Date.now() };
+    set((s) => ({
+      savedConfigs: {
+        ...s.savedConfigs,
+        [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
+      },
+    }));
     const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: s.savedConfigs[platform].map((c) =>
-            c.id === activeId ? updatedConfig : c
-          ),
-        },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
       }));
-    } else {
-      console.error('更新字段映射失败，数据可能未同步');
+      console.error('更新字段映射失败，已回滚');
     }
   },
 
   updateFieldAlias: async (platform, field, alias) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (!config) return;
-    const updatedConfig = { ...config, fieldAliases: { ...config.fieldAliases, [field]: alias }, updatedAt: Date.now() };
+    const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
+    if (!prev) return;
+    const updatedConfig = { ...prev, fieldAliases: { ...prev.fieldAliases, [field]: alias }, updatedAt: Date.now() };
+    set((s) => ({
+      savedConfigs: {
+        ...s.savedConfigs,
+        [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
+      },
+    }));
     const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: s.savedConfigs[platform].map((c) =>
-            c.id === activeId ? updatedConfig : c
-          ),
-        },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
       }));
-    } else {
-      console.error('更新字段别名失败，数据可能未同步');
+      console.error('更新字段别名失败，已回滚');
     }
   },
 
   updateFormula: async (platform, field, formula) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (!config) return;
-    const updatedConfig = { ...config, formulas: { ...config.formulas, [field]: formula }, updatedAt: Date.now() };
+    const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
+    if (!prev) return;
+    const updatedConfig = { ...prev, formulas: { ...prev.formulas, [field]: formula }, updatedAt: Date.now() };
+    set((s) => ({
+      savedConfigs: {
+        ...s.savedConfigs,
+        [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
+      },
+    }));
     const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: s.savedConfigs[platform].map((c) =>
-            c.id === activeId ? updatedConfig : c
-          ),
-        },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
       }));
-    } else {
-      console.error('更新公式失败，数据可能未同步');
+      console.error('更新公式失败，已回滚');
     }
   },
 
   updateFilterRules: async (platform, rules) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (!config) return;
-    const updatedConfig = { ...config, filterRules: { ...config.filterRules, ...rules }, updatedAt: Date.now() };
+    const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
+    if (!prev) return;
+    const updatedConfig = { ...prev, filterRules: { ...prev.filterRules, ...rules }, updatedAt: Date.now() };
+    set((s) => ({
+      savedConfigs: {
+        ...s.savedConfigs,
+        [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
+      },
+    }));
     const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: s.savedConfigs[platform].map((c) =>
-            c.id === activeId ? updatedConfig : c
-          ),
-        },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
       }));
-    } else {
-      console.error('更新筛选规则失败，数据可能未同步');
+      console.error('更新筛选规则失败，已回滚');
     }
   },
 
   setCountQuantityAsRows: async (platform, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (!config) return;
-    const updatedConfig = { ...config, countQuantityAsRows: value, updatedAt: Date.now() };
+    const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
+    if (!prev) return;
+    const updatedConfig = { ...prev, countQuantityAsRows: value, updatedAt: Date.now() };
+    set((s) => ({
+      savedConfigs: {
+        ...s.savedConfigs,
+        [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
+      },
+    }));
     const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: s.savedConfigs[platform].map((c) =>
-            c.id === activeId ? updatedConfig : c
-          ),
-        },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
       }));
-    } else {
-      console.error('更新只统计数量设置失败，数据可能未同步');
+      console.error('更新只统计数量设置失败，已回滚');
     }
   },
 
   setProfitRateRedThreshold: async (platform, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (!config) return;
-    const updatedConfig = { ...config, profitRateRedThreshold: value, updatedAt: Date.now() };
+    const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
+    if (!prev) return;
+    const updatedConfig = { ...prev, profitRateRedThreshold: value, updatedAt: Date.now() };
+    set((s) => ({
+      savedConfigs: {
+        ...s.savedConfigs,
+        [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
+      },
+    }));
     const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: s.savedConfigs[platform].map((c) =>
-            c.id === activeId ? updatedConfig : c
-          ),
-        },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
       }));
-    } else {
-      console.error('更新利润率红线失败，数据可能未同步');
+      console.error('更新利润率红线失败，已回滚');
     }
   },
 
@@ -614,58 +626,57 @@ export const useAppStore = create<AppState>()((set, get) => ({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
+    set((s) => ({
+      savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], newConfig] },
+      activeConfigId: { ...s.activeConfigId, [platform]: newConfig.id },
+    }));
     const ok = await dbOps.upsertCalcConfig(newConfig, platform, true);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: [...s.savedConfigs[platform], newConfig],
-        },
-        activeConfigId: { ...s.activeConfigId, [platform]: newConfig.id },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].filter((c) => c.id !== newConfig.id) },
+        activeConfigId: { ...s.activeConfigId, [platform]: activeConfig.id },
       }));
-      // 旧方案取消激活
+      console.error('保存新配置失败，已回滚');
+    } else {
       const oldConfig = get().savedConfigs[platform].find((c) => c.id === activeConfig.id);
       if (oldConfig) dbOps.upsertCalcConfig(oldConfig, platform, false).catch(console.error);
-    } else {
-      console.error('保存新配置失败，数据可能未同步');
     }
   },
 
   renameConfig: async (platform, configId, name) => {
-    const config = get().savedConfigs[platform].find((c) => c.id === configId);
-    if (!config) return;
-    const updatedConfig = { ...config, name, updatedAt: Date.now() };
+    const prev = get().savedConfigs[platform].find((c) => c.id === configId);
+    if (!prev) return;
+    const updatedConfig = { ...prev, name, updatedAt: Date.now() };
+    set((s) => ({
+      savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === configId ? updatedConfig : c) },
+    }));
     const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, configId === get().activeConfigId[platform]);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: s.savedConfigs[platform].map((c) =>
-            c.id === configId ? updatedConfig : c
-          ),
-        },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === configId ? prev : c) },
       }));
-    } else {
-      console.error('重命名配置失败，数据可能未同步');
+      console.error('重命名配置失败，已回滚');
     }
   },
 
   deleteConfig: async (platform, configId) => {
     const configs = get().savedConfigs[platform];
-    if (configs.length <= 1) return; // 至少保留一个
+    if (configs.length <= 1) return;
+    const prev = configs.find((c) => c.id === configId);
+    const prevActiveId = get().activeConfigId[platform];
+    set((s) => ({
+      savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].filter((c) => c.id !== configId) },
+      activeConfigId: s.activeConfigId[platform] === configId
+        ? { ...s.activeConfigId, [platform]: configs[0].id === configId ? configs[1].id : configs[0].id }
+        : s.activeConfigId,
+    }));
     const ok = await dbOps.deleteCalcConfig(configId);
-    if (ok) {
+    if (!ok && prev) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: s.savedConfigs[platform].filter((c) => c.id !== configId),
-        },
-        activeConfigId: s.activeConfigId[platform] === configId
-          ? { ...s.activeConfigId, [platform]: configs[0].id === configId ? configs[1].id : configs[0].id }
-          : s.activeConfigId,
+        savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], prev] },
+        activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId },
       }));
-    } else {
-      console.error('删除配置失败，数据可能未同步');
+      console.error('删除配置失败，已回滚');
     }
   },
 
@@ -684,22 +695,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
+    set((s) => ({
+      savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], newConfig] },
+      activeConfigId: { ...s.activeConfigId, [platform]: id },
+    }));
     const ok = await dbOps.upsertCalcConfig(newConfig, platform, true);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        savedConfigs: {
-          ...s.savedConfigs,
-          [platform]: [...s.savedConfigs[platform], newConfig],
-        },
-        activeConfigId: { ...s.activeConfigId, [platform]: id },
+        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].filter((c) => c.id !== id) },
+        activeConfigId: { ...s.activeConfigId, [platform]: activeConfig.id },
       }));
-    } else {
-      console.error('保存配置失败，数据可能未同步');
+      console.error('保存配置失败，已回滚');
     }
   },
 
   switchConfig: async (platform, configId) => {
-    // 先写数据库，再更新本地
+    const prevActiveId = get().activeConfigId[platform];
+    set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
     const configs = get().savedConfigs[platform] || [];
     const results = await Promise.all(
       configs.map((config) => {
@@ -707,10 +719,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         return dbOps.upsertCalcConfig(config, platform, isActive);
       })
     );
-    if (results.some((r) => r)) {
-      set({ activeConfigId: { ...get().activeConfigId, [platform]: configId } });
-    } else {
-      console.error('切换配置失败，数据可能未同步');
+    if (!results.some((r) => r)) {
+      set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId } }));
+      console.error('切换配置失败，已回滚');
     }
   },
 
@@ -729,8 +740,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       yearMonth: data.yearMonth,
       configId: data.configId,
     };
-
-    // 先写 Supabase，再更新本地
+    // 乐观更新
+    set((s) => ({
+      rawOrders: { ...s.rawOrders, [platform]: [...s.rawOrders[platform], orderFile] },
+    }));
+    get().mergeHeaders(platform, data.headers);
     const ok = await dbOps.insertOrderFile(
       {
         id,
@@ -744,44 +758,43 @@ export const useAppStore = create<AppState>()((set, get) => ({
       },
       data.rows
     );
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        rawOrders: {
-          ...s.rawOrders,
-          [platform]: [...s.rawOrders[platform], orderFile],
-        },
+        rawOrders: { ...s.rawOrders, [platform]: s.rawOrders[platform].filter((f) => f.id !== id) },
       }));
-      // 合并 headers
-      get().mergeHeaders(platform, data.headers);
-    } else {
-      console.error('导入订单失败，数据可能未同步');
+      console.error('导入订单失败，已回滚');
     }
   },
 
   deleteOrderFile: async (platform, fileId) => {
+    const prev = get().rawOrders[platform].find((f) => f.id === fileId);
+    set((s) => ({
+      rawOrders: { ...s.rawOrders, [platform]: s.rawOrders[platform].filter((f) => f.id !== fileId) },
+    }));
     const ok = await dbOps.deleteOrderFile(fileId);
-    if (ok) {
+    if (!ok && prev) {
       set((s) => ({
-        rawOrders: {
-          ...s.rawOrders,
-          [platform]: s.rawOrders[platform].filter((f) => f.id !== fileId),
-        },
+        rawOrders: { ...s.rawOrders, [platform]: [...s.rawOrders[platform], prev] },
       }));
-    } else {
-      console.error('删除订单文件失败，数据可能未同步');
+      console.error('删除订单文件失败，已回滚');
     }
   },
 
   clearOrders: async (platform) => {
-    const ids = get().rawOrders[platform].map((f) => f.id);
+    const prev = get().rawOrders[platform];
+    const prevHeaders = get().availableHeaders[platform];
+    set((s) => ({
+      rawOrders: { ...s.rawOrders, [platform]: [] },
+      availableHeaders: { ...s.availableHeaders, [platform]: [] },
+    }));
+    const ids = prev.map((f) => f.id);
     const ok = await dbOps.deleteOrderFilesBatch(ids);
-    if (ok) {
+    if (!ok) {
       set((s) => ({
-        rawOrders: { ...s.rawOrders, [platform]: [] },
-        availableHeaders: { ...s.availableHeaders, [platform]: [] },
+        rawOrders: { ...s.rawOrders, [platform]: prev },
+        availableHeaders: { ...s.availableHeaders, [platform]: prevHeaders },
       }));
-    } else {
-      console.error('清空订单失败，数据可能未同步');
+      console.error('清空订单失败，已回滚');
     }
   },
 
