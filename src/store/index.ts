@@ -31,21 +31,6 @@ function persistToLocal(state: LocalPersistState) {
 }
 
 let _persistTimer: number | null = null;
-let _isIdleCallback = false;
-function schedulePersist(state: LocalPersistState) {
-  if (_persistTimer !== null) {
-    if (_isIdleCallback) cancelIdleCallback(_persistTimer);
-    else clearTimeout(_persistTimer);
-  }
-  const doPersist = () => { _persistTimer = null; _isIdleCallback = false; persistToLocal(state); };
-  if (typeof requestIdleCallback !== 'undefined') {
-    _isIdleCallback = true;
-    _persistTimer = requestIdleCallback(doPersist, { timeout: 2000 });
-  } else {
-    _isIdleCallback = false;
-    _persistTimer = setTimeout(doPersist, 500) as unknown as number;
-  }
-}
 
 // ====== 工具函数 ======
 const generateId = () => Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
@@ -305,6 +290,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
         availableHeaders,
         dbConnected: anySuccess,
       });
+      // 加载成功后保存一份快照到 localStorage
+      if (anySuccess) {
+        try { persistSnapshot(); } catch { /* ignore */ }
+      }
     } catch (error) {
       console.error('加载数据失败:', error);
       // 尝试从 localStorage 恢复
@@ -1033,7 +1022,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 }));
 
-// ====== 自动持久化到 localStorage ======
-useAppStore.subscribe((state) => {
-  schedulePersist(state);
-});
+// ====== 持久化策略：不在每次 set() 时写入 localStorage（避免阻塞 UI） ======
+// 只在以下时机持久化：
+// 1. loadAllData 成功后（快照备份）
+// 2. beforeunload（页面关闭/刷新时）
+// 3. 每 30 秒定时备份
+function persistSnapshot() {
+  const s = useAppStore.getState();
+  persistToLocal({
+    skuMappings: s.skuMappings,
+    shopNames: s.shopNames,
+    savedConfigs: s.savedConfigs,
+    activeConfigId: s.activeConfigId,
+  });
+}
+
+// 页面关闭/刷新时紧急保存
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    try { persistSnapshot(); } catch { /* ignore */ }
+  });
+  // 每 30 秒定时备份（低频，不阻塞操作）
+  setInterval(() => {
+    try { persistSnapshot(); } catch { /* ignore */ }
+  }, 30000);
+}

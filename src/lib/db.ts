@@ -126,12 +126,16 @@ export async function deleteSkuMapping(id: string): Promise<boolean> {
 export async function deleteSkuMappingsBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
-    // Supabase .in() 大量 ID 时需分批，每批 500
+    // 分批并行删除，每批 500
+    const batches: string[][] = [];
     for (let i = 0; i < ids.length; i += 500) {
-      const batch = ids.slice(i, i + 500);
-      const { error } = await supabase.from('sku_mappings').delete().in('id', batch);
-      if (error) { console.error('deleteSkuMappingsBatch error:', error); return false; }
+      batches.push(ids.slice(i, i + 500));
     }
+    const results = await Promise.all(
+      batches.map((batch) => supabase.from('sku_mappings').delete().in('id', batch))
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) { console.error('deleteSkuMappingsBatch error:', failed.error); return false; }
     return true;
   }, false, 'deleteSkuMappingsBatch');
 }
@@ -146,12 +150,16 @@ export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<bo
       purchase_price: m.purchasePrice,
       platform: m.platform,
     }));
-    // Supabase 单次 upsert 限制，每批 500
+    // 分批并行 upsert，每批 500
+    const batches: typeof rows[] = [];
     for (let i = 0; i < rows.length; i += 500) {
-      const batch = rows.slice(i, i + 500);
-      const { error } = await supabase.from('sku_mappings').upsert(batch);
-      if (error) { console.error('upsertSkuMappingsBatch error:', error); return false; }
+      batches.push(rows.slice(i, i + 500));
     }
+    const results = await Promise.all(
+      batches.map((batch) => supabase.from('sku_mappings').upsert(batch))
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) { console.error('upsertSkuMappingsBatch error:', failed.error); return false; }
     return true;
   }, false, 'upsertSkuMappingsBatch');
 }
@@ -199,11 +207,15 @@ export async function deleteShopName(id: string): Promise<boolean> {
 export async function deleteShopNamesBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
+    const batches: string[][] = [];
     for (let i = 0; i < ids.length; i += 500) {
-      const batch = ids.slice(i, i + 500);
-      const { error } = await supabase.from('shop_names').delete().in('id', batch);
-      if (error) { console.error('deleteShopNamesBatch error:', error); return false; }
+      batches.push(ids.slice(i, i + 500));
     }
+    const results = await Promise.all(
+      batches.map((batch) => supabase.from('shop_names').delete().in('id', batch))
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) { console.error('deleteShopNamesBatch error:', failed.error); return false; }
     return true;
   }, false, 'deleteShopNamesBatch');
 }
@@ -217,11 +229,15 @@ export async function upsertShopNamesBatch(shops: ShopName[]): Promise<boolean> 
       platform: s.platform,
       created_at: s.createdAt || Date.now(),
     }));
+    const batches: typeof rows[] = [];
     for (let i = 0; i < rows.length; i += 500) {
-      const batch = rows.slice(i, i + 500);
-      const { error } = await supabase.from('shop_names').upsert(batch);
-      if (error) { console.error('upsertShopNamesBatch error:', error); return false; }
+      batches.push(rows.slice(i, i + 500));
     }
+    const results = await Promise.all(
+      batches.map((batch) => supabase.from('shop_names').upsert(batch))
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) { console.error('upsertShopNamesBatch error:', failed.error); return false; }
     return true;
   }, false, 'upsertShopNamesBatch');
 }
@@ -404,12 +420,20 @@ export async function deleteOrderFile(id: string): Promise<boolean> {
 export async function deleteOrderFilesBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
+    const batches: string[][] = [];
     for (let i = 0; i < ids.length; i += 500) {
-      const batch = ids.slice(i, i + 500);
-      await supabase.from('order_rows').delete().in('file_id', batch);
-      const { error } = await supabase.from('raw_order_files').delete().in('id', batch);
-      if (error) { console.error('deleteOrderFilesBatch error:', error); return false; }
+      batches.push(ids.slice(i, i + 500));
     }
+    // 并行删除 order_rows 和 raw_order_files
+    const results = await Promise.all(
+      batches.map(async (batch) => {
+        await supabase.from('order_rows').delete().in('file_id', batch);
+        const { error } = await supabase.from('raw_order_files').delete().in('id', batch);
+        return { error };
+      })
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) { console.error('deleteOrderFilesBatch error:', failed.error); return false; }
     return true;
   }, false, 'deleteOrderFilesBatch');
 }

@@ -11,8 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Upload, Download, Plus, Trash2, Edit3, Search, Package } from 'lucide-react';
+import { Upload, Download, Plus, Trash2, Edit3, Search, Package, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { SkuMapping, Platform } from '@/types';
+
+const PAGE_SIZE = 100;
 
 export function SkuManager() {
   // 使用 selector 只订阅需要的数据和函数，避免无关状态变化触发重渲染
@@ -27,6 +29,7 @@ export function SkuManager() {
   const [editForm, setEditForm] = useState<Partial<SkuMapping>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>('shopee');
+  const [currentPage, setCurrentPage] = useState(1);
   const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,6 +48,24 @@ export function SkuManager() {
     ),
     [platformMappings, searchTerm]
   );
+
+  // 分页计算
+  const totalPages = Math.max(1, Math.ceil(filteredMappings.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pagedMappings = useMemo(
+    () => filteredMappings.slice((safeCurrentPage - 1) * PAGE_SIZE, safeCurrentPage * PAGE_SIZE),
+    [filteredMappings, safeCurrentPage]
+  );
+
+  // 切换平台或搜索时重置到第1页
+  const handlePlatformChange = useCallback((p: Platform) => {
+    setSelectedPlatform(p);
+    setCurrentPage(1);
+  }, []);
+  const handleSearchChange = useCallback((val: string) => {
+    setSearchTerm(val);
+    setCurrentPage(1);
+  }, []);
 
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -101,7 +122,7 @@ export function SkuManager() {
                   size="sm"
                   variant={selectedPlatform === p ? 'default' : 'outline'}
                   style={selectedPlatform === p ? { backgroundColor: pc.color, color: '#fff' } : {}}
-                  onClick={() => setSelectedPlatform(p)}
+                  onClick={() => handlePlatformChange(p)}
                 >
                   {pc.name}
                 </Button>
@@ -113,7 +134,7 @@ export function SkuManager() {
             <Input
               placeholder="搜索 SKU / 商品名称 / 分类..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9"
             />
           </div>
@@ -221,7 +242,7 @@ export function SkuManager() {
       {/* SKU 表格 */}
       <Card>
         <CardContent className="p-0">
-          {filteredMappings.length === 0 ? (
+          {pagedMappings.length === 0 ? (
             <div className="py-16 text-center text-muted-foreground">
               <Package className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p>{platformMappings.length === 0 ? '暂无 SKU 映射数据' : '没有匹配的搜索结果'}</p>
@@ -242,7 +263,7 @@ export function SkuManager() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredMappings.map((mapping: SkuMapping) => (
+                  {pagedMappings.map((mapping: SkuMapping) => (
                     <TableRow key={mapping.id}>
                       {editingId === mapping.id ? (
                         <>
@@ -313,6 +334,32 @@ export function SkuManager() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {/* 分页控件 */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t">
+              <span className="text-sm text-muted-foreground">
+                第 {safeCurrentPage}/{totalPages} 页，共 {filteredMappings.length} 条
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
