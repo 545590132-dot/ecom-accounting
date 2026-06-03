@@ -29,39 +29,39 @@ export interface AppState {
   retryConnection: () => Promise<void>;
 
   // SKU 映射
-  addSkuMapping: (mapping: Omit<SkuMapping, 'id'>) => Promise<void>;
-  updateSkuMapping: (id: string, mapping: Partial<SkuMapping>) => Promise<void>;
-  deleteSkuMapping: (id: string) => Promise<void>;
-  deleteSkuMappingsBatch: (ids: string[]) => Promise<void>;
-  importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => Promise<void>;
-  clearSkuMappings: () => Promise<void>;
+  addSkuMapping: (mapping: Omit<SkuMapping, 'id'>) => void;
+  updateSkuMapping: (id: string, mapping: Partial<SkuMapping>) => void;
+  deleteSkuMapping: (id: string) => void;
+  deleteSkuMappingsBatch: (ids: string[]) => void;
+  importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => void;
+  clearSkuMappings: () => void;
 
   // 店铺名称
-  addShopName: (name: Omit<ShopName, 'id'>) => Promise<void>;
-  addShopNamesBatch: (platform: Platform, names: string[]) => Promise<void>;
-  updateShopName: (id: string, name: string) => Promise<void>;
-  deleteShopName: (id: string) => Promise<void>;
-  clearShopNames: (platform: Platform) => Promise<void>;
+  addShopName: (name: Omit<ShopName, 'id'>) => void;
+  addShopNamesBatch: (platform: Platform, names: string[]) => void;
+  updateShopName: (id: string, name: string) => void;
+  deleteShopName: (id: string) => void;
+  clearShopNames: (platform: Platform) => void;
 
   // 计算配置
   getActiveConfig: (platform: Platform) => SavedCalcConfig | undefined;
-  setActiveConfig: (platform: Platform, configId: string) => Promise<void>;
-  switchConfig: (platform: Platform, configId: string) => Promise<void>;
-  saveCurrentConfig: (platform: Platform, name: string) => Promise<void>;
-  updateFieldMapping: (platform: Platform, field: string, value: string) => Promise<void>;
-  updateFieldAlias: (platform: Platform, field: string, alias: string) => Promise<void>;
-  updateFormula: (platform: Platform, field: string, formula: string) => Promise<void>;
-  updateFilterRules: (platform: Platform, rules: Partial<OrderFilterRules>) => Promise<void>;
-  setCountQuantityAsRows: (platform: Platform, value: boolean) => Promise<void>;
-  setProfitRateRedThreshold: (platform: Platform, value: number | null) => Promise<void>;
-  saveAsNewConfig: (platform: Platform, name: string) => Promise<void>;
-  renameConfig: (platform: Platform, configId: string, name: string) => Promise<void>;
-  deleteConfig: (platform: Platform, configId: string) => Promise<void>;
+  setActiveConfig: (platform: Platform, configId: string) => void;
+  switchConfig: (platform: Platform, configId: string) => void;
+  saveCurrentConfig: (platform: Platform, name: string) => void;
+  updateFieldMapping: (platform: Platform, field: string, value: string) => void;
+  updateFieldAlias: (platform: Platform, field: string, alias: string) => void;
+  updateFormula: (platform: Platform, field: string, formula: string) => void;
+  updateFilterRules: (platform: Platform, rules: Partial<OrderFilterRules>) => void;
+  setCountQuantityAsRows: (platform: Platform, value: boolean) => void;
+  setProfitRateRedThreshold: (platform: Platform, value: number | null) => void;
+  saveAsNewConfig: (platform: Platform, name: string) => void;
+  renameConfig: (platform: Platform, configId: string, name: string) => void;
+  deleteConfig: (platform: Platform, configId: string) => void;
 
   // 导入数据
-  importOrders: (platform: Platform, data: { headers: string[]; rows: Record<string, string | number>[]; shopName: string; yearMonth: string; configId: string; fileName?: string }) => Promise<void>;
-  deleteOrderFile: (platform: Platform, fileId: string) => Promise<void>;
-  clearOrders: (platform: Platform) => Promise<void>;
+  importOrders: (platform: Platform, data: { headers: string[]; rows: Record<string, string | number>[]; shopName: string; yearMonth: string; configId: string; fileName?: string }) => void;
+  deleteOrderFile: (platform: Platform, fileId: string) => void;
+  clearOrders: (platform: Platform) => void;
   mergeHeaders: (platform: Platform, headers: string[]) => void;
 
   // 计算方法（纯前端，不涉及数据库）

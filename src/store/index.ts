@@ -32,6 +32,31 @@ function persistToLocal(state: LocalPersistState) {
 
 let _persistTimer: number | null = null;
 
+// ====== 后台 Supabase 写入队列 ======
+// UI 只管本地状态（即时响应），Supabase 写入在后台异步执行
+// 失败时回滚本地状态
+const _pendingWrites: Array<{ label: string; execute: () => Promise<boolean>; rollback: () => void }> = [];
+let _writing = false;
+
+async function _processWriteQueue() {
+  if (_writing) return;
+  _writing = true;
+  while (_pendingWrites.length > 0) {
+    const task = _pendingWrites.shift()!;
+    const ok = await task.execute();
+    if (!ok) {
+      console.error(`${task.label} 失败，回滚本地状态`);
+      task.rollback();
+    }
+  }
+  _writing = false;
+}
+
+function enqueueWrite(label: string, execute: () => Promise<boolean>, rollback: () => void) {
+  _pendingWrites.push({ label, execute, rollback });
+  _processWriteQueue();
+}
+
 // ====== 工具函数 ======
 const generateId = () => Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
 
@@ -129,39 +154,39 @@ interface AppState {
   retryConnection: () => Promise<void>;
 
   // SKU 映射
-  addSkuMapping: (mapping: Omit<SkuMapping, 'id'>) => Promise<void>;
-  updateSkuMapping: (id: string, mapping: Partial<SkuMapping>) => Promise<void>;
-  deleteSkuMapping: (id: string) => Promise<void>;
-  deleteSkuMappingsBatch: (ids: string[]) => Promise<void>;
-  importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => Promise<void>;
-  clearSkuMappings: () => Promise<void>;
+  addSkuMapping: (mapping: Omit<SkuMapping, 'id'>) => void;
+  updateSkuMapping: (id: string, mapping: Partial<SkuMapping>) => void;
+  deleteSkuMapping: (id: string) => void;
+  deleteSkuMappingsBatch: (ids: string[]) => void;
+  importSkuMappings: (mappings: Omit<SkuMapping, 'id'>[]) => void;
+  clearSkuMappings: () => void;
 
   // 店铺名称
-  addShopName: (name: Omit<ShopName, 'id'>) => Promise<void>;
-  addShopNamesBatch: (platform: Platform, names: string[]) => Promise<void>;
-  updateShopName: (id: string, name: string) => Promise<void>;
-  deleteShopName: (id: string) => Promise<void>;
-  clearShopNames: (platform: Platform) => Promise<void>;
+  addShopName: (name: Omit<ShopName, 'id'>) => void;
+  addShopNamesBatch: (platform: Platform, names: string[]) => void;
+  updateShopName: (id: string, name: string) => void;
+  deleteShopName: (id: string) => void;
+  clearShopNames: (platform: Platform) => void;
 
   // 计算配置
   getActiveConfig: (platform: Platform) => SavedCalcConfig | undefined;
-  setActiveConfig: (platform: Platform, configId: string) => Promise<void>;
-  switchConfig: (platform: Platform, configId: string) => Promise<void>;
-  saveCurrentConfig: (platform: Platform, name: string) => Promise<void>;
-  updateFieldMapping: (platform: Platform, field: string, value: string) => Promise<void>;
-  updateFieldAlias: (platform: Platform, field: string, alias: string) => Promise<void>;
-  updateFormula: (platform: Platform, field: string, formula: string) => Promise<void>;
-  updateFilterRules: (platform: Platform, rules: Partial<OrderFilterRules>) => Promise<void>;
-  setCountQuantityAsRows: (platform: Platform, value: boolean) => Promise<void>;
-  setProfitRateRedThreshold: (platform: Platform, value: number | null) => Promise<void>;
-  saveAsNewConfig: (platform: Platform, name: string) => Promise<void>;
-  renameConfig: (platform: Platform, configId: string, name: string) => Promise<void>;
-  deleteConfig: (platform: Platform, configId: string) => Promise<void>;
+  setActiveConfig: (platform: Platform, configId: string) => void;
+  switchConfig: (platform: Platform, configId: string) => void;
+  saveCurrentConfig: (platform: Platform, name: string) => void;
+  updateFieldMapping: (platform: Platform, field: string, value: string) => void;
+  updateFieldAlias: (platform: Platform, field: string, alias: string) => void;
+  updateFormula: (platform: Platform, field: string, formula: string) => void;
+  updateFilterRules: (platform: Platform, rules: Partial<OrderFilterRules>) => void;
+  setCountQuantityAsRows: (platform: Platform, value: boolean) => void;
+  setProfitRateRedThreshold: (platform: Platform, value: number | null) => void;
+  saveAsNewConfig: (platform: Platform, name: string) => void;
+  renameConfig: (platform: Platform, configId: string, name: string) => void;
+  deleteConfig: (platform: Platform, configId: string) => void;
 
   // 导入数据
-  importOrders: (platform: Platform, data: { headers: string[]; rows: Record<string, string | number>[]; shopName: string; yearMonth: string; configId: string; fileName?: string }) => Promise<void>;
-  deleteOrderFile: (platform: Platform, fileId: string) => Promise<void>;
-  clearOrders: (platform: Platform) => Promise<void>;
+  importOrders: (platform: Platform, data: { headers: string[]; rows: Record<string, string | number>[]; shopName: string; yearMonth: string; configId: string; fileName?: string }) => void;
+  deleteOrderFile: (platform: Platform, fileId: string) => void;
+  clearOrders: (platform: Platform) => void;
   mergeHeaders: (platform: Platform, headers: string[]) => void;
 
   // 计算方法（纯前端，不涉及数据库）
@@ -316,144 +341,122 @@ export const useAppStore = create<AppState>()((set, get) => ({
     await get().loadAllData();
   },
 
-  // ====== SKU 映射 ======
-  addSkuMapping: async (mapping) => {
+  // ====== SKU 映射（全部同步返回，Supabase 写入后台队列执行） ======
+  addSkuMapping: (mapping) => {
     const id = generateId();
     const newMapping = { ...mapping, id };
-    // 乐观更新：先更新本地，UI 即时响应
     set((s) => ({ skuMappings: [...s.skuMappings, newMapping] }));
-    const ok = await dbOps.upsertSkuMapping(newMapping);
-    if (!ok) {
-      set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
-      console.error('新增 SKU 失败，已回滚');
-    }
+    enqueueWrite('addSkuMapping', () => dbOps.upsertSkuMapping(newMapping), () =>
+      set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }))
+    );
   },
 
-  updateSkuMapping: async (id, mapping) => {
+  updateSkuMapping: (id, mapping) => {
     const prev = get().skuMappings.find((m) => m.id === id);
-    // 乐观更新
-    set((s) => ({
-      skuMappings: s.skuMappings.map((m) => (m.id === id ? { ...m, ...mapping } : m)),
-    }));
+    set((s) => ({ skuMappings: s.skuMappings.map((m) => (m.id === id ? { ...m, ...mapping } : m)) }));
     const updated = get().skuMappings.find((m) => m.id === id);
     if (updated) {
-      const ok = await dbOps.upsertSkuMapping(updated as SkuMapping);
-      if (!ok && prev) {
-        set((s) => ({ skuMappings: s.skuMappings.map((m) => (m.id === id ? prev : m)) }));
-        console.error('更新 SKU 失败，已回滚');
-      }
+      const capturedPrev = prev;
+      enqueueWrite('updateSkuMapping', () => dbOps.upsertSkuMapping(updated as SkuMapping), () => {
+        if (capturedPrev) set((s) => ({ skuMappings: s.skuMappings.map((m) => (m.id === id ? capturedPrev : m)) }));
+      });
     }
   },
 
-  deleteSkuMapping: async (id) => {
+  deleteSkuMapping: (id) => {
     const prev = get().skuMappings.find((m) => m.id === id);
-    // 乐观删除
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
-    const ok = await dbOps.deleteSkuMapping(id);
-    if (!ok && prev) {
-      set((s) => ({ skuMappings: [...s.skuMappings, prev] }));
-      console.error('删除 SKU 失败，已回滚');
+    if (prev) {
+      enqueueWrite('deleteSkuMapping', () => dbOps.deleteSkuMapping(id), () =>
+        set((s) => ({ skuMappings: [...s.skuMappings, prev!] }))
+      );
+    } else {
+      dbOps.deleteSkuMapping(id).catch(console.error);
     }
   },
 
-  deleteSkuMappingsBatch: async (ids: string[]) => {
+  deleteSkuMappingsBatch: (ids: string[]) => {
     const prev = get().skuMappings.filter((m) => ids.includes(m.id));
     const idSet = new Set(ids);
-    // 乐观批量删除
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
-    const ok = await dbOps.deleteSkuMappingsBatch(ids);
-    if (!ok) {
-      set((s) => ({ skuMappings: [...s.skuMappings, ...prev] }));
-      console.error('批量删除 SKU 失败，已回滚');
-    }
+    enqueueWrite('deleteSkuMappingsBatch', () => dbOps.deleteSkuMappingsBatch(ids), () =>
+      set((s) => ({ skuMappings: [...s.skuMappings, ...prev] }))
+    );
   },
 
-  importSkuMappings: async (mappings) => {
+  importSkuMappings: (mappings) => {
     const newMappings = mappings.map((m) => ({ ...m, id: generateId() }));
-    // 乐观更新
+    const newIds = new Set(newMappings.map((m) => m.id));
     set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
-    const ok = await dbOps.upsertSkuMappingsBatch(newMappings);
-    if (!ok) {
-      const newIds = new Set(newMappings.map((m) => m.id));
-      set((s) => ({ skuMappings: s.skuMappings.filter((m) => !newIds.has(m.id)) }));
-      console.error('导入 SKU 失败，已回滚');
-    }
+    enqueueWrite('importSkuMappings', () => dbOps.upsertSkuMappingsBatch(newMappings), () =>
+      set((s) => ({ skuMappings: s.skuMappings.filter((m) => !newIds.has(m.id)) }))
+    );
   },
 
-  clearSkuMappings: async () => {
+  clearSkuMappings: () => {
     const prev = get().skuMappings;
-    // 乐观清空
     set({ skuMappings: [] });
     const ids = prev.map((m) => m.id);
-    const ok = await dbOps.deleteSkuMappingsBatch(ids);
-    if (!ok) {
-      set({ skuMappings: prev });
-      console.error('清空 SKU 失败，已回滚');
-    }
+    enqueueWrite('clearSkuMappings', () => dbOps.deleteSkuMappingsBatch(ids), () =>
+      set({ skuMappings: prev })
+    );
   },
 
-  // ====== 店铺名称 ======
-  addShopName: async (name) => {
+  // ====== 店铺名称（全部同步返回，Supabase 写入后台队列执行） ======
+  addShopName: (name) => {
     const id = generateId();
     const newName = { ...name, id };
     set((s) => ({ shopNames: [...s.shopNames, newName] }));
-    const ok = await dbOps.insertShopName(newName);
-    if (!ok) {
-      set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
-      console.error('新增店铺失败，已回滚');
-    }
+    enqueueWrite('addShopName', () => dbOps.insertShopName(newName), () =>
+      set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }))
+    );
   },
 
-  addShopNamesBatch: async (platform, names) => {
+  addShopNamesBatch: (platform, names) => {
     const newNames: ShopName[] = names.map((name) => ({
       id: generateId(),
       name,
       platform,
       createdAt: Date.now(),
     }));
+    const newIds = new Set(newNames.map((n) => n.id));
     set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
-    const ok = await dbOps.upsertShopNamesBatch(newNames);
-    if (!ok) {
-      const newIds = new Set(newNames.map((n) => n.id));
-      set((s) => ({ shopNames: s.shopNames.filter((n) => !newIds.has(n.id)) }));
-      console.error('批量新增店铺失败，已回滚');
-    }
+    enqueueWrite('addShopNamesBatch', () => dbOps.upsertShopNamesBatch(newNames), () =>
+      set((s) => ({ shopNames: s.shopNames.filter((n) => !newIds.has(n.id)) }))
+    );
   },
 
-  updateShopName: async (id, name) => {
+  updateShopName: (id, name) => {
     const prev = get().shopNames.find((n) => n.id === id);
-    set((s) => ({
-      shopNames: s.shopNames.map((n) => (n.id === id ? { ...n, name } : n)),
-    }));
+    set((s) => ({ shopNames: s.shopNames.map((n) => (n.id === id ? { ...n, name } : n)) }));
     const current = get().shopNames.find((n) => n.id === id);
     if (current) {
-      const ok = await dbOps.insertShopName(current);
-      if (!ok && prev) {
-        set((s) => ({ shopNames: s.shopNames.map((n) => (n.id === id ? prev : n)) }));
-        console.error('更新店铺失败，已回滚');
-      }
+      const capturedPrev = prev;
+      enqueueWrite('updateShopName', () => dbOps.insertShopName(current), () => {
+        if (capturedPrev) set((s) => ({ shopNames: s.shopNames.map((n) => (n.id === id ? capturedPrev : n)) }));
+      });
     }
   },
 
-  deleteShopName: async (id) => {
+  deleteShopName: (id) => {
     const prev = get().shopNames.find((n) => n.id === id);
     set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
-    const ok = await dbOps.deleteShopName(id);
-    if (!ok && prev) {
-      set((s) => ({ shopNames: [...s.shopNames, prev] }));
-      console.error('删除店铺失败，已回滚');
+    if (prev) {
+      enqueueWrite('deleteShopName', () => dbOps.deleteShopName(id), () =>
+        set((s) => ({ shopNames: [...s.shopNames, prev!] }))
+      );
+    } else {
+      dbOps.deleteShopName(id).catch(console.error);
     }
   },
 
-  clearShopNames: async (platform) => {
+  clearShopNames: (platform) => {
     const prev = get().shopNames.filter((n) => n.platform === platform);
     set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
     const ids = prev.map((n) => n.id);
-    const ok = await dbOps.deleteShopNamesBatch(ids);
-    if (!ok) {
-      set((s) => ({ shopNames: [...s.shopNames, ...prev] }));
-      console.error('清空店铺失败，已回滚');
-    }
+    enqueueWrite('clearShopNames', () => dbOps.deleteShopNamesBatch(ids), () =>
+      set((s) => ({ shopNames: [...s.shopNames, ...prev] }))
+    );
   },
 
   // ====== 计算配置 ======
@@ -463,23 +466,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
     return configs.find((c) => c.id === state.activeConfigId[platform]);
   },
 
-  setActiveConfig: async (platform, configId) => {
+  setActiveConfig: (platform, configId) => {
     const prevActiveId = get().activeConfigId[platform];
     set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
     const configs = get().savedConfigs[platform] || [];
-    const results = await Promise.all(
-      configs.map((config) => {
-        const isActive = config.id === configId;
-        return dbOps.upsertCalcConfig(config, platform, isActive);
-      })
-    );
-    if (!results.some((r) => r)) {
-      set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId } }));
-      console.error('切换配置失败，已回滚');
-    }
+    enqueueWrite('setActiveConfig', async () => {
+      const results = await Promise.all(
+        configs.map((config) => {
+          const isActive = config.id === configId;
+          return dbOps.upsertCalcConfig(config, platform, isActive);
+        })
+      );
+      return results.some((r) => r);
+    }, () => set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId } })));
   },
 
-  updateFieldMapping: async (platform, field, value) => {
+  updateFieldMapping: (platform, field, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
     const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
@@ -491,16 +493,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (!ok) {
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
-      }));
-      console.error('更新字段映射失败，已回滚');
-    }
+    enqueueWrite('updateFieldMapping', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
+      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
+    );
   },
 
-  updateFieldAlias: async (platform, field, alias) => {
+  updateFieldAlias: (platform, field, alias) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
     const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
@@ -512,16 +510,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (!ok) {
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
-      }));
-      console.error('更新字段别名失败，已回滚');
-    }
+    enqueueWrite('updateFieldAlias', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
+      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
+    );
   },
 
-  updateFormula: async (platform, field, formula) => {
+  updateFormula: (platform, field, formula) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
     const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
@@ -533,16 +527,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (!ok) {
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
-      }));
-      console.error('更新公式失败，已回滚');
-    }
+    enqueueWrite('updateFormula', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
+      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
+    );
   },
 
-  updateFilterRules: async (platform, rules) => {
+  updateFilterRules: (platform, rules) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
     const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
@@ -554,16 +544,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (!ok) {
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
-      }));
-      console.error('更新筛选规则失败，已回滚');
-    }
+    enqueueWrite('updateFilterRules', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
+      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
+    );
   },
 
-  setCountQuantityAsRows: async (platform, value) => {
+  setCountQuantityAsRows: (platform, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
     const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
@@ -575,16 +561,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (!ok) {
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
-      }));
-      console.error('更新只统计数量设置失败，已回滚');
-    }
+    enqueueWrite('setCountQuantityAsRows', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
+      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
+    );
   },
 
-  setProfitRateRedThreshold: async (platform, value) => {
+  setProfitRateRedThreshold: (platform, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
     const prev = get().savedConfigs[platform].find((c) => c.id === activeId);
@@ -596,16 +578,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? updatedConfig : c),
       },
     }));
-    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
-    if (!ok) {
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) },
-      }));
-      console.error('更新利润率红线失败，已回滚');
-    }
+    enqueueWrite('setProfitRateRedThreshold', () => dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]), () =>
+      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === activeId ? prev : c) } }))
+    );
   },
 
-  saveAsNewConfig: async (platform, name) => {
+  saveAsNewConfig: (platform, name) => {
     const activeConfig = get().getActiveConfig(platform);
     if (!activeConfig) return;
     const newConfig: SavedCalcConfig = {
@@ -619,36 +597,34 @@ export const useAppStore = create<AppState>()((set, get) => ({
       savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], newConfig] },
       activeConfigId: { ...s.activeConfigId, [platform]: newConfig.id },
     }));
-    const ok = await dbOps.upsertCalcConfig(newConfig, platform, true);
-    if (!ok) {
+    enqueueWrite('saveAsNewConfig', async () => {
+      const ok = await dbOps.upsertCalcConfig(newConfig, platform, true);
+      if (ok) {
+        const oldConfig = get().savedConfigs[platform].find((c) => c.id === activeConfig.id);
+        if (oldConfig) await dbOps.upsertCalcConfig(oldConfig, platform, false);
+      }
+      return ok;
+    }, () =>
       set((s) => ({
         savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].filter((c) => c.id !== newConfig.id) },
         activeConfigId: { ...s.activeConfigId, [platform]: activeConfig.id },
-      }));
-      console.error('保存新配置失败，已回滚');
-    } else {
-      const oldConfig = get().savedConfigs[platform].find((c) => c.id === activeConfig.id);
-      if (oldConfig) dbOps.upsertCalcConfig(oldConfig, platform, false).catch(console.error);
-    }
+      }))
+    );
   },
 
-  renameConfig: async (platform, configId, name) => {
+  renameConfig: (platform, configId, name) => {
     const prev = get().savedConfigs[platform].find((c) => c.id === configId);
     if (!prev) return;
     const updatedConfig = { ...prev, name, updatedAt: Date.now() };
     set((s) => ({
       savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === configId ? updatedConfig : c) },
     }));
-    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, configId === get().activeConfigId[platform]);
-    if (!ok) {
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === configId ? prev : c) },
-      }));
-      console.error('重命名配置失败，已回滚');
-    }
+    enqueueWrite('renameConfig', () => dbOps.upsertCalcConfig(updatedConfig, platform, configId === get().activeConfigId[platform]), () =>
+      set((s) => ({ savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].map((c) => c.id === configId ? prev : c) } }))
+    );
   },
 
-  deleteConfig: async (platform, configId) => {
+  deleteConfig: (platform, configId) => {
     const configs = get().savedConfigs[platform];
     if (configs.length <= 1) return;
     const prev = configs.find((c) => c.id === configId);
@@ -659,17 +635,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ? { ...s.activeConfigId, [platform]: configs[0].id === configId ? configs[1].id : configs[0].id }
         : s.activeConfigId,
     }));
-    const ok = await dbOps.deleteCalcConfig(configId);
-    if (!ok && prev) {
-      set((s) => ({
-        savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], prev] },
-        activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId },
-      }));
-      console.error('删除配置失败，已回滚');
+    if (prev) {
+      enqueueWrite('deleteConfig', () => dbOps.deleteCalcConfig(configId), () =>
+        set((s) => ({
+          savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], prev] },
+          activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId },
+        }))
+      );
     }
   },
 
-  saveCurrentConfig: async (platform, name) => {
+  saveCurrentConfig: (platform, name) => {
     const activeConfig = get().getActiveConfig(platform);
     if (!activeConfig) return;
     const id = generateId();
@@ -688,34 +664,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
       savedConfigs: { ...s.savedConfigs, [platform]: [...s.savedConfigs[platform], newConfig] },
       activeConfigId: { ...s.activeConfigId, [platform]: id },
     }));
-    const ok = await dbOps.upsertCalcConfig(newConfig, platform, true);
-    if (!ok) {
+    enqueueWrite('saveCurrentConfig', () => dbOps.upsertCalcConfig(newConfig, platform, true), () =>
       set((s) => ({
         savedConfigs: { ...s.savedConfigs, [platform]: s.savedConfigs[platform].filter((c) => c.id !== id) },
         activeConfigId: { ...s.activeConfigId, [platform]: activeConfig.id },
-      }));
-      console.error('保存配置失败，已回滚');
-    }
+      }))
+    );
   },
 
-  switchConfig: async (platform, configId) => {
+  switchConfig: (platform, configId) => {
     const prevActiveId = get().activeConfigId[platform];
     set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
     const configs = get().savedConfigs[platform] || [];
-    const results = await Promise.all(
-      configs.map((config) => {
-        const isActive = config.id === configId;
-        return dbOps.upsertCalcConfig(config, platform, isActive);
-      })
-    );
-    if (!results.some((r) => r)) {
-      set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId } }));
-      console.error('切换配置失败，已回滚');
-    }
+    enqueueWrite('switchConfig', async () => {
+      const results = await Promise.all(
+        configs.map((config) => dbOps.upsertCalcConfig(config, platform, config.id === configId))
+      );
+      return results.some((r) => r);
+    }, () => set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: prevActiveId } })));
   },
 
   // ====== 导入数据 ======
-  importOrders: async (platform, data) => {
+  importOrders: (platform, data) => {
     const id = generateId();
     const importTime = Date.now();
     const orderFile: RawOrderData = {
@@ -729,12 +699,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       yearMonth: data.yearMonth,
       configId: data.configId,
     };
-    // 乐观更新
     set((s) => ({
       rawOrders: { ...s.rawOrders, [platform]: [...s.rawOrders[platform], orderFile] },
     }));
     get().mergeHeaders(platform, data.headers);
-    const ok = await dbOps.insertOrderFile(
+    enqueueWrite('importOrders', async () => { const r = await dbOps.insertOrderFile(
       {
         id,
         platform,
@@ -746,30 +715,26 @@ export const useAppStore = create<AppState>()((set, get) => ({
         file_name: data.fileName || '',
       },
       data.rows
-    );
-    if (!ok) {
-      set((s) => ({
-        rawOrders: { ...s.rawOrders, [platform]: s.rawOrders[platform].filter((f) => f.id !== id) },
-      }));
-      console.error('导入订单失败，已回滚');
-    }
+    ); return r !== null; }, () => set((s) => ({
+      rawOrders: { ...s.rawOrders, [platform]: s.rawOrders[platform].filter((f) => f.id !== id) },
+    })));
   },
 
-  deleteOrderFile: async (platform, fileId) => {
+  deleteOrderFile: (platform, fileId) => {
     const prev = get().rawOrders[platform].find((f) => f.id === fileId);
     set((s) => ({
       rawOrders: { ...s.rawOrders, [platform]: s.rawOrders[platform].filter((f) => f.id !== fileId) },
     }));
-    const ok = await dbOps.deleteOrderFile(fileId);
-    if (!ok && prev) {
-      set((s) => ({
-        rawOrders: { ...s.rawOrders, [platform]: [...s.rawOrders[platform], prev] },
-      }));
-      console.error('删除订单文件失败，已回滚');
+    if (prev) {
+      enqueueWrite('deleteOrderFile', () => dbOps.deleteOrderFile(fileId), () =>
+        set((s) => ({ rawOrders: { ...s.rawOrders, [platform]: [...s.rawOrders[platform], prev] } }))
+      );
+    } else {
+      dbOps.deleteOrderFile(fileId).catch(console.error);
     }
   },
 
-  clearOrders: async (platform) => {
+  clearOrders: (platform) => {
     const prev = get().rawOrders[platform];
     const prevHeaders = get().availableHeaders[platform];
     set((s) => ({
@@ -777,14 +742,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       availableHeaders: { ...s.availableHeaders, [platform]: [] },
     }));
     const ids = prev.map((f) => f.id);
-    const ok = await dbOps.deleteOrderFilesBatch(ids);
-    if (!ok) {
+    enqueueWrite('clearOrders', () => dbOps.deleteOrderFilesBatch(ids), () =>
       set((s) => ({
         rawOrders: { ...s.rawOrders, [platform]: prev },
         availableHeaders: { ...s.availableHeaders, [platform]: prevHeaders },
-      }));
-      console.error('清空订单失败，已回滚');
-    }
+      }))
+    );
   },
 
   mergeHeaders: (platform, headers) => {

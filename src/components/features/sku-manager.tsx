@@ -6,24 +6,24 @@ import { parseExcelFile, downloadSkuTemplate, importSkuFromExcel } from '@/lib/e
 import { formatCurrency, PLATFORM_CONFIG } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Upload, Download, Plus, Trash2, Edit3, Search, Package, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Upload, Download, Plus, Trash2, Edit3, Search, Package, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import type { SkuMapping, Platform } from '@/types';
 
 const PAGE_SIZE = 100;
 
 export function SkuManager() {
-  // 使用 selector 只订阅需要的数据和函数，避免无关状态变化触发重渲染
   const skuMappings = useAppStore((s) => s.skuMappings);
   const addSkuMapping = useAppStore((s) => s.addSkuMapping);
   const updateSkuMapping = useAppStore((s) => s.updateSkuMapping);
   const deleteSkuMapping = useAppStore((s) => s.deleteSkuMapping);
   const deleteSkuMappingsBatch = useAppStore((s) => s.deleteSkuMappingsBatch);
   const importSkuMappings = useAppStore((s) => s.importSkuMappings);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<SkuMapping>>({});
@@ -31,9 +31,9 @@ export function SkuManager() {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>('shopee');
   const [currentPage, setCurrentPage] = useState(1);
   const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '' });
+  const [clearing, setClearing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 用 useMemo 缓存过滤结果，避免每次渲染都重新计算
   const platformMappings = useMemo(
     () => skuMappings.filter((m: SkuMapping) => m.platform === selectedPlatform),
     [skuMappings, selectedPlatform]
@@ -49,7 +49,6 @@ export function SkuManager() {
     [platformMappings, searchTerm]
   );
 
-  // 分页计算
   const totalPages = Math.max(1, Math.ceil(filteredMappings.length / PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const pagedMappings = useMemo(
@@ -57,11 +56,11 @@ export function SkuManager() {
     [filteredMappings, safeCurrentPage]
   );
 
-  // 切换平台或搜索时重置到第1页
   const handlePlatformChange = useCallback((p: Platform) => {
     setSelectedPlatform(p);
     setCurrentPage(1);
   }, []);
+
   const handleSearchChange = useCallback((val: string) => {
     setSearchTerm(val);
     setCurrentPage(1);
@@ -89,6 +88,18 @@ export function SkuManager() {
     setDialogOpen(false);
   };
 
+  const handleClearPlatform = useCallback(async () => {
+    if (clearing) return;
+    const ids = platformMappings.map((m) => m.id);
+    if (ids.length === 0) return;
+    setClearing(true);
+    try {
+      deleteSkuMappingsBatch(ids);
+    } finally {
+      setClearing(false);
+    }
+  }, [clearing, platformMappings, deleteSkuMappingsBatch]);
+
   const startEdit = (mapping: SkuMapping) => {
     setEditingId(mapping.id);
     setEditForm({ ...mapping });
@@ -112,7 +123,6 @@ export function SkuManager() {
       {/* 操作栏 */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <div className="flex items-center gap-3">
-          {/* 平台切换 */}
           <div className="flex gap-1">
             {(['shopee', 'lazada', 'tiktok'] as Platform[]).map((p) => {
               const pc = PLATFORM_CONFIG[p];
@@ -225,16 +235,27 @@ export function SkuManager() {
       </Card>
 
       {/* 数据统计 */}
-      <div className="flex gap-4 text-sm text-muted-foreground">
+      <div className="flex gap-4 text-sm text-muted-foreground items-center">
         <span>共 <span className="font-medium text-foreground">{platformMappings.length}</span> 条 {PLATFORM_CONFIG[selectedPlatform].name} SKU 映射</span>
         {filteredMappings.length !== platformMappings.length && (
           <span>筛选显示 <span className="font-medium text-foreground">{filteredMappings.length}</span> 条</span>
         )}
         {platformMappings.length > 0 && (
-          <Button variant="ghost" size="sm" className="h-auto p-0 text-destructive hover:text-destructive" onClick={() => {
-            deleteSkuMappingsBatch(platformMappings.map((m) => m.id));
-          }}>
-            清空当前平台
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto p-0 text-destructive hover:text-destructive"
+            disabled={clearing}
+            onClick={handleClearPlatform}
+          >
+            {clearing ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                正在清空...
+              </>
+            ) : (
+              '清空当前平台'
+            )}
           </Button>
         )}
       </div>
