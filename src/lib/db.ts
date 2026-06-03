@@ -88,7 +88,8 @@ export async function getSkuMappings(platform: Platform): Promise<SkuMapping[]> 
     const { data, error } = await supabase
       .from('sku_mappings')
       .select('*')
-      .eq('platform', platform);
+      .eq('platform', platform)
+      .limit(10000);
     if (error) { console.error('getSkuMappings error:', error); return []; }
     return (data || []).map((row: Record<string, unknown>) => ({
       id: row.id as string,
@@ -125,8 +126,12 @@ export async function deleteSkuMapping(id: string): Promise<boolean> {
 export async function deleteSkuMappingsBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
-    const { error } = await supabase.from('sku_mappings').delete().in('id', ids);
-    if (error) { console.error('deleteSkuMappingsBatch error:', error); return false; }
+    // Supabase .in() 大量 ID 时需分批，每批 500
+    for (let i = 0; i < ids.length; i += 500) {
+      const batch = ids.slice(i, i + 500);
+      const { error } = await supabase.from('sku_mappings').delete().in('id', batch);
+      if (error) { console.error('deleteSkuMappingsBatch error:', error); return false; }
+    }
     return true;
   }, false, 'deleteSkuMappingsBatch');
 }
@@ -141,8 +146,12 @@ export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<bo
       purchase_price: m.purchasePrice,
       platform: m.platform,
     }));
-    const { error } = await supabase.from('sku_mappings').upsert(rows);
-    if (error) { console.error('upsertSkuMappingsBatch error:', error); return false; }
+    // Supabase 单次 upsert 限制，每批 500
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const { error } = await supabase.from('sku_mappings').upsert(batch);
+      if (error) { console.error('upsertSkuMappingsBatch error:', error); return false; }
+    }
     return true;
   }, false, 'upsertSkuMappingsBatch');
 }
@@ -154,7 +163,8 @@ export async function getShopNames(platform: Platform): Promise<ShopName[]> {
     const { data, error } = await supabase
       .from('shop_names')
       .select('*')
-      .eq('platform', platform);
+      .eq('platform', platform)
+      .limit(10000);
     if (error) { console.error('getShopNames error:', error); return []; }
     return (data || []).map((row: Record<string, unknown>) => ({
       id: row.id as string,
@@ -189,8 +199,11 @@ export async function deleteShopName(id: string): Promise<boolean> {
 export async function deleteShopNamesBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
-    const { error } = await supabase.from('shop_names').delete().in('id', ids);
-    if (error) { console.error('deleteShopNamesBatch error:', error); return false; }
+    for (let i = 0; i < ids.length; i += 500) {
+      const batch = ids.slice(i, i + 500);
+      const { error } = await supabase.from('shop_names').delete().in('id', batch);
+      if (error) { console.error('deleteShopNamesBatch error:', error); return false; }
+    }
     return true;
   }, false, 'deleteShopNamesBatch');
 }
@@ -204,8 +217,11 @@ export async function upsertShopNamesBatch(shops: ShopName[]): Promise<boolean> 
       platform: s.platform,
       created_at: s.createdAt || Date.now(),
     }));
-    const { error } = await supabase.from('shop_names').upsert(rows);
-    if (error) { console.error('upsertShopNamesBatch error:', error); return false; }
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const { error } = await supabase.from('shop_names').upsert(batch);
+      if (error) { console.error('upsertShopNamesBatch error:', error); return false; }
+    }
     return true;
   }, false, 'upsertShopNamesBatch');
 }
@@ -275,7 +291,8 @@ export async function getCalcConfigs(platform: Platform): Promise<SavedCalcConfi
     const { data, error } = await supabase
       .from('calc_configs')
       .select('*')
-      .eq('platform', platform);
+      .eq('platform', platform)
+      .limit(10000);
     if (error) { console.error('getCalcConfigs error:', error); return []; }
     return (data || []).map((row: Record<string, unknown>) => mapRowToConfig(row));
   }, [], 'getCalcConfigs');
@@ -304,7 +321,8 @@ export async function getOrderFiles(platform: Platform): Promise<RawOrderData[]>
     const { data: files, error: fileError } = await supabase
       .from('raw_order_files')
       .select('*')
-      .eq('platform', platform);
+      .eq('platform', platform)
+      .limit(10000);
     if (fileError) { console.error('getOrderFiles error:', fileError); return []; }
     if (!files || files.length === 0) return [];
 
@@ -313,7 +331,8 @@ export async function getOrderFiles(platform: Platform): Promise<RawOrderData[]>
     const { data: rows, error: rowsError } = await supabase
       .from('order_rows')
       .select('*')
-      .in('file_id', fileIds);
+      .in('file_id', fileIds)
+      .limit(100000);
     if (rowsError) { console.error('getOrderRows error:', rowsError); return []; }
 
     const rowsByFile: Record<string, Record<string, string | number>[]> = {};
@@ -385,9 +404,12 @@ export async function deleteOrderFile(id: string): Promise<boolean> {
 export async function deleteOrderFilesBatch(ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
   return safeOp(async () => {
-    await supabase.from('order_rows').delete().in('file_id', ids);
-    const { error } = await supabase.from('raw_order_files').delete().in('id', ids);
-    if (error) { console.error('deleteOrderFilesBatch error:', error); return false; }
+    for (let i = 0; i < ids.length; i += 500) {
+      const batch = ids.slice(i, i + 500);
+      await supabase.from('order_rows').delete().in('file_id', batch);
+      const { error } = await supabase.from('raw_order_files').delete().in('id', batch);
+      if (error) { console.error('deleteOrderFilesBatch error:', error); return false; }
+    }
     return true;
   }, false, 'deleteOrderFilesBatch');
 }
