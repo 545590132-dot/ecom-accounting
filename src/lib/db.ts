@@ -122,6 +122,31 @@ export async function deleteSkuMapping(id: string): Promise<boolean> {
   }, false, 'deleteSkuMapping');
 }
 
+export async function deleteSkuMappingsBatch(ids: string[]): Promise<boolean> {
+  if (ids.length === 0) return true;
+  return safeOp(async () => {
+    const { error } = await supabase.from('sku_mappings').delete().in('id', ids);
+    if (error) { console.error('deleteSkuMappingsBatch error:', error); return false; }
+    return true;
+  }, false, 'deleteSkuMappingsBatch');
+}
+
+export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<boolean> {
+  if (mappings.length === 0) return true;
+  return safeOp(async () => {
+    const rows = mappings.map((m) => ({
+      id: m.id,
+      sku: m.sku,
+      product_name: m.productName,
+      purchase_price: m.purchasePrice,
+      platform: m.platform,
+    }));
+    const { error } = await supabase.from('sku_mappings').upsert(rows);
+    if (error) { console.error('upsertSkuMappingsBatch error:', error); return false; }
+    return true;
+  }, false, 'upsertSkuMappingsBatch');
+}
+
 // ====== 店铺名称 ======
 
 export async function getShopNames(platform: Platform): Promise<ShopName[]> {
@@ -159,6 +184,30 @@ export async function deleteShopName(id: string): Promise<boolean> {
     if (error) { console.error('deleteShopName error:', error); return false; }
     return true;
   }, false, 'deleteShopName');
+}
+
+export async function deleteShopNamesBatch(ids: string[]): Promise<boolean> {
+  if (ids.length === 0) return true;
+  return safeOp(async () => {
+    const { error } = await supabase.from('shop_names').delete().in('id', ids);
+    if (error) { console.error('deleteShopNamesBatch error:', error); return false; }
+    return true;
+  }, false, 'deleteShopNamesBatch');
+}
+
+export async function upsertShopNamesBatch(shops: ShopName[]): Promise<boolean> {
+  if (shops.length === 0) return true;
+  return safeOp(async () => {
+    const rows = shops.map((s) => ({
+      id: s.id,
+      name: s.name,
+      platform: s.platform,
+      created_at: s.createdAt || Date.now(),
+    }));
+    const { error } = await supabase.from('shop_names').upsert(rows);
+    if (error) { console.error('upsertShopNamesBatch error:', error); return false; }
+    return true;
+  }, false, 'upsertShopNamesBatch');
 }
 
 // ====== 计算配置 ======
@@ -331,6 +380,16 @@ export async function deleteOrderFile(id: string): Promise<boolean> {
     if (error) { console.error('deleteOrderFile error:', error); return false; }
     return true;
   }, false, 'deleteOrderFile');
+}
+
+export async function deleteOrderFilesBatch(ids: string[]): Promise<boolean> {
+  if (ids.length === 0) return true;
+  return safeOp(async () => {
+    await supabase.from('order_rows').delete().in('file_id', ids);
+    const { error } = await supabase.from('raw_order_files').delete().in('id', ids);
+    if (error) { console.error('deleteOrderFilesBatch error:', error); return false; }
+    return true;
+  }, false, 'deleteOrderFilesBatch');
 }
 
 // ====== 数据同步：将 localStorage 数据推送到 Supabase ======

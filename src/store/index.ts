@@ -351,19 +351,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
   deleteSkuMappingsBatch: async (ids: string[]) => {
     const idSet = new Set(ids);
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
-    Promise.all(ids.map((id: string) => dbOps.deleteSkuMapping(id))).catch(console.error);
+    dbOps.deleteSkuMappingsBatch(ids).catch(console.error);
   },
 
   importSkuMappings: async (mappings) => {
     const newMappings = mappings.map((m) => ({ ...m, id: generateId() }));
     set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
-    Promise.all(newMappings.map((m) => dbOps.upsertSkuMapping(m))).catch(console.error);
+    dbOps.upsertSkuMappingsBatch(newMappings).catch(console.error);
   },
 
   clearSkuMappings: async () => {
     const ids = get().skuMappings.map((m) => m.id);
     set({ skuMappings: [] });
-    Promise.all(ids.map((id) => dbOps.deleteSkuMapping(id))).catch(console.error);
+    dbOps.deleteSkuMappingsBatch(ids).catch(console.error);
   },
 
   // ====== 店铺名称 ======
@@ -382,7 +382,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       createdAt: Date.now(),
     }));
     set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
-    Promise.all(newNames.map((n) => dbOps.insertShopName(n))).catch(console.error);
+    dbOps.upsertShopNamesBatch(newNames).catch(console.error);
   },
 
   updateShopName: async (id, name) => {
@@ -401,7 +401,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   clearShopNames: async (platform) => {
     const ids = get().shopNames.filter((n) => n.platform === platform).map((n) => n.id);
     set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
-    Promise.all(ids.map((id) => dbOps.deleteShopName(id))).catch(console.error);
+    dbOps.deleteShopNamesBatch(ids).catch(console.error);
   },
 
   // ====== 计算配置 ======
@@ -663,7 +663,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       rawOrders: { ...s.rawOrders, [platform]: [] },
       availableHeaders: { ...s.availableHeaders, [platform]: [] },
     }));
-    Promise.all(ids.map((id) => dbOps.deleteOrderFile(id))).catch(console.error);
+    dbOps.deleteOrderFilesBatch(ids).catch(console.error);
   },
 
   mergeHeaders: (platform, headers) => {
