@@ -331,47 +331,78 @@ export const useAppStore = create<AppState>()((set, get) => ({
   addSkuMapping: async (mapping) => {
     const id = generateId();
     const newMapping = { ...mapping, id };
-    set((s) => ({ skuMappings: [...s.skuMappings, newMapping] }));
-    dbOps.upsertSkuMapping(newMapping).catch(console.error);
+    const ok = await dbOps.upsertSkuMapping(newMapping);
+    if (ok) {
+      set((s) => ({ skuMappings: [...s.skuMappings, newMapping] }));
+    } else {
+      console.error('新增 SKU 失败，数据可能未同步');
+    }
   },
 
   updateSkuMapping: async (id, mapping) => {
-    set((s) => ({
-      skuMappings: s.skuMappings.map((m) => (m.id === id ? { ...m, ...mapping } : m)),
-    }));
-    const existing = get().skuMappings.find((m) => m.id === id);
-    if (existing) dbOps.upsertSkuMapping(existing).catch(console.error);
+    const updated = { ...get().skuMappings.find((m) => m.id === id), ...mapping };
+    if (updated.id) {
+      const ok = await dbOps.upsertSkuMapping(updated as SkuMapping);
+      if (ok) {
+        set((s) => ({
+          skuMappings: s.skuMappings.map((m) => (m.id === id ? { ...m, ...mapping } : m)),
+        }));
+      } else {
+        console.error('更新 SKU 失败，数据可能未同步');
+      }
+    }
   },
 
   deleteSkuMapping: async (id) => {
-    set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
-    dbOps.deleteSkuMapping(id).catch(console.error);
+    // 先删除 Supabase，成功后再更新本地状态，防止刷新后数据恢复
+    const ok = await dbOps.deleteSkuMapping(id);
+    if (ok) {
+      set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
+    } else {
+      console.error('删除 SKU 失败，数据可能未同步');
+    }
   },
 
   deleteSkuMappingsBatch: async (ids: string[]) => {
-    const idSet = new Set(ids);
-    set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
-    dbOps.deleteSkuMappingsBatch(ids).catch(console.error);
+    const ok = await dbOps.deleteSkuMappingsBatch(ids);
+    if (ok) {
+      const idSet = new Set(ids);
+      set((s) => ({ skuMappings: s.skuMappings.filter((m) => !idSet.has(m.id)) }));
+    } else {
+      console.error('批量删除 SKU 失败，数据可能未同步');
+    }
   },
 
   importSkuMappings: async (mappings) => {
     const newMappings = mappings.map((m) => ({ ...m, id: generateId() }));
-    set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
-    dbOps.upsertSkuMappingsBatch(newMappings).catch(console.error);
+    const ok = await dbOps.upsertSkuMappingsBatch(newMappings);
+    if (ok) {
+      set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
+    } else {
+      console.error('导入 SKU 失败，数据可能未同步');
+    }
   },
 
   clearSkuMappings: async () => {
     const ids = get().skuMappings.map((m) => m.id);
-    set({ skuMappings: [] });
-    dbOps.deleteSkuMappingsBatch(ids).catch(console.error);
+    const ok = await dbOps.deleteSkuMappingsBatch(ids);
+    if (ok) {
+      set({ skuMappings: [] });
+    } else {
+      console.error('清空 SKU 失败，数据可能未同步');
+    }
   },
 
   // ====== 店铺名称 ======
   addShopName: async (name) => {
     const id = generateId();
     const newName = { ...name, id };
-    set((s) => ({ shopNames: [...s.shopNames, newName] }));
-    dbOps.insertShopName(newName).catch(console.error);
+    const ok = await dbOps.insertShopName(newName);
+    if (ok) {
+      set((s) => ({ shopNames: [...s.shopNames, newName] }));
+    } else {
+      console.error('新增店铺失败，数据可能未同步');
+    }
   },
 
   addShopNamesBatch: async (platform, names) => {
@@ -381,27 +412,46 @@ export const useAppStore = create<AppState>()((set, get) => ({
       platform,
       createdAt: Date.now(),
     }));
-    set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
-    dbOps.upsertShopNamesBatch(newNames).catch(console.error);
+    const ok = await dbOps.upsertShopNamesBatch(newNames);
+    if (ok) {
+      set((s) => ({ shopNames: [...s.shopNames, ...newNames] }));
+    } else {
+      console.error('批量新增店铺失败，数据可能未同步');
+    }
   },
 
   updateShopName: async (id, name) => {
-    set((s) => ({
-      shopNames: s.shopNames.map((n) => (n.id === id ? { ...n, name } : n)),
-    }));
     const current = get().shopNames.find((n) => n.id === id);
-    if (current) dbOps.insertShopName(current).catch(console.error);
+    if (current) {
+      const updated = { ...current, name };
+      const ok = await dbOps.insertShopName(updated);
+      if (ok) {
+        set((s) => ({
+          shopNames: s.shopNames.map((n) => (n.id === id ? { ...n, name } : n)),
+        }));
+      } else {
+        console.error('更新店铺失败，数据可能未同步');
+      }
+    }
   },
 
   deleteShopName: async (id) => {
-    set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
-    dbOps.deleteShopName(id).catch(console.error);
+    const ok = await dbOps.deleteShopName(id);
+    if (ok) {
+      set((s) => ({ shopNames: s.shopNames.filter((n) => n.id !== id) }));
+    } else {
+      console.error('删除店铺失败，数据可能未同步');
+    }
   },
 
   clearShopNames: async (platform) => {
     const ids = get().shopNames.filter((n) => n.platform === platform).map((n) => n.id);
-    set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
-    dbOps.deleteShopNamesBatch(ids).catch(console.error);
+    const ok = await dbOps.deleteShopNamesBatch(ids);
+    if (ok) {
+      set((s) => ({ shopNames: s.shopNames.filter((n) => n.platform !== platform) }));
+    } else {
+      console.error('清空店铺失败，数据可能未同步');
+    }
   },
 
   // ====== 计算配置 ======
@@ -412,111 +462,146 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   setActiveConfig: async (platform, configId) => {
-    set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
-    // 后台异步更新数据库中的 is_active 状态
+    // 先写数据库，再更新本地
     const configs = get().savedConfigs[platform] || [];
-    Promise.all(configs.map((config) => {
-      const isActive = config.id === configId;
-      return dbOps.upsertCalcConfig(config, platform, isActive);
-    })).catch(console.error);
+    const results = await Promise.all(
+      configs.map((config) => {
+        const isActive = config.id === configId;
+        return dbOps.upsertCalcConfig(config, platform, isActive);
+      })
+    );
+    if (results.some((r) => r)) {
+      set((s) => ({ activeConfigId: { ...s.activeConfigId, [platform]: configId } }));
+    } else {
+      console.error('切换配置失败，数据可能未同步');
+    }
   },
 
   updateFieldMapping: async (platform, field, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: s.savedConfigs[platform].map((c) =>
-          c.id === activeId
-            ? { ...c, fieldMapping: { ...c.fieldMapping, [field]: value }, updatedAt: Date.now() }
-            : c
-        ),
-      },
-    }));
+    // 先计算更新后的 config
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
+    if (!config) return;
+    const updatedConfig = { ...config, fieldMapping: { ...config.fieldMapping, [field]: value }, updatedAt: Date.now() };
+    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: s.savedConfigs[platform].map((c) =>
+            c.id === activeId ? updatedConfig : c
+          ),
+        },
+      }));
+    } else {
+      console.error('更新字段映射失败，数据可能未同步');
+    }
   },
 
   updateFieldAlias: async (platform, field, alias) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: s.savedConfigs[platform].map((c) =>
-          c.id === activeId
-            ? { ...c, fieldAliases: { ...c.fieldAliases, [field]: alias }, updatedAt: Date.now() }
-            : c
-        ),
-      },
-    }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
+    if (!config) return;
+    const updatedConfig = { ...config, fieldAliases: { ...config.fieldAliases, [field]: alias }, updatedAt: Date.now() };
+    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: s.savedConfigs[platform].map((c) =>
+            c.id === activeId ? updatedConfig : c
+          ),
+        },
+      }));
+    } else {
+      console.error('更新字段别名失败，数据可能未同步');
+    }
   },
 
   updateFormula: async (platform, field, formula) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: s.savedConfigs[platform].map((c) =>
-          c.id === activeId
-            ? { ...c, formulas: { ...c.formulas, [field]: formula }, updatedAt: Date.now() }
-            : c
-        ),
-      },
-    }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
+    if (!config) return;
+    const updatedConfig = { ...config, formulas: { ...config.formulas, [field]: formula }, updatedAt: Date.now() };
+    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: s.savedConfigs[platform].map((c) =>
+            c.id === activeId ? updatedConfig : c
+          ),
+        },
+      }));
+    } else {
+      console.error('更新公式失败，数据可能未同步');
+    }
   },
 
   updateFilterRules: async (platform, rules) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: s.savedConfigs[platform].map((c) =>
-          c.id === activeId
-            ? { ...c, filterRules: { ...c.filterRules, ...rules }, updatedAt: Date.now() }
-            : c
-        ),
-      },
-    }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
+    if (!config) return;
+    const updatedConfig = { ...config, filterRules: { ...config.filterRules, ...rules }, updatedAt: Date.now() };
+    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: s.savedConfigs[platform].map((c) =>
+            c.id === activeId ? updatedConfig : c
+          ),
+        },
+      }));
+    } else {
+      console.error('更新筛选规则失败，数据可能未同步');
+    }
   },
 
   setCountQuantityAsRows: async (platform, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: s.savedConfigs[platform].map((c) =>
-          c.id === activeId ? { ...c, countQuantityAsRows: value, updatedAt: Date.now() } : c
-        ),
-      },
-    }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
+    if (!config) return;
+    const updatedConfig = { ...config, countQuantityAsRows: value, updatedAt: Date.now() };
+    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: s.savedConfigs[platform].map((c) =>
+            c.id === activeId ? updatedConfig : c
+          ),
+        },
+      }));
+    } else {
+      console.error('更新只统计数量设置失败，数据可能未同步');
+    }
   },
 
   setProfitRateRedThreshold: async (platform, value) => {
     const activeId = get().activeConfigId[platform];
     if (!activeId) return;
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: s.savedConfigs[platform].map((c) =>
-          c.id === activeId ? { ...c, profitRateRedThreshold: value, updatedAt: Date.now() } : c
-        ),
-      },
-    }));
     const config = get().savedConfigs[platform].find((c) => c.id === activeId);
-    if (config) dbOps.upsertCalcConfig(config, platform, activeId === get().activeConfigId[platform]).catch(console.error);
+    if (!config) return;
+    const updatedConfig = { ...config, profitRateRedThreshold: value, updatedAt: Date.now() };
+    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, activeId === get().activeConfigId[platform]);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: s.savedConfigs[platform].map((c) =>
+            c.id === activeId ? updatedConfig : c
+          ),
+        },
+      }));
+    } else {
+      console.error('更新利润率红线失败，数据可能未同步');
+    }
   },
 
   saveAsNewConfig: async (platform, name) => {
@@ -529,45 +614,59 @@ export const useAppStore = create<AppState>()((set, get) => ({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: [...s.savedConfigs[platform], newConfig],
-      },
-      activeConfigId: { ...s.activeConfigId, [platform]: newConfig.id },
-    }));
-    // 后台异步更新数据库：新方案激活，旧方案取消激活
-    dbOps.upsertCalcConfig(newConfig, platform, true).catch(console.error);
-    const oldConfig = get().savedConfigs[platform].find((c) => c.id === activeConfig.id);
-    if (oldConfig) dbOps.upsertCalcConfig(oldConfig, platform, false).catch(console.error);
+    const ok = await dbOps.upsertCalcConfig(newConfig, platform, true);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: [...s.savedConfigs[platform], newConfig],
+        },
+        activeConfigId: { ...s.activeConfigId, [platform]: newConfig.id },
+      }));
+      // 旧方案取消激活
+      const oldConfig = get().savedConfigs[platform].find((c) => c.id === activeConfig.id);
+      if (oldConfig) dbOps.upsertCalcConfig(oldConfig, platform, false).catch(console.error);
+    } else {
+      console.error('保存新配置失败，数据可能未同步');
+    }
   },
 
   renameConfig: async (platform, configId, name) => {
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: s.savedConfigs[platform].map((c) =>
-          c.id === configId ? { ...c, name, updatedAt: Date.now() } : c
-        ),
-      },
-    }));
     const config = get().savedConfigs[platform].find((c) => c.id === configId);
-    if (config) dbOps.upsertCalcConfig(config, platform, configId === get().activeConfigId[platform]).catch(console.error);
+    if (!config) return;
+    const updatedConfig = { ...config, name, updatedAt: Date.now() };
+    const ok = await dbOps.upsertCalcConfig(updatedConfig, platform, configId === get().activeConfigId[platform]);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: s.savedConfigs[platform].map((c) =>
+            c.id === configId ? updatedConfig : c
+          ),
+        },
+      }));
+    } else {
+      console.error('重命名配置失败，数据可能未同步');
+    }
   },
 
   deleteConfig: async (platform, configId) => {
     const configs = get().savedConfigs[platform];
     if (configs.length <= 1) return; // 至少保留一个
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: s.savedConfigs[platform].filter((c) => c.id !== configId),
-      },
-      activeConfigId: s.activeConfigId[platform] === configId
-        ? { ...s.activeConfigId, [platform]: configs[0].id === configId ? configs[1].id : configs[0].id }
-        : s.activeConfigId,
-    }));
-    dbOps.deleteCalcConfig(configId).catch(console.error);
+    const ok = await dbOps.deleteCalcConfig(configId);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: s.savedConfigs[platform].filter((c) => c.id !== configId),
+        },
+        activeConfigId: s.activeConfigId[platform] === configId
+          ? { ...s.activeConfigId, [platform]: configs[0].id === configId ? configs[1].id : configs[0].id }
+          : s.activeConfigId,
+      }));
+    } else {
+      console.error('删除配置失败，数据可能未同步');
+    }
   },
 
   saveCurrentConfig: async (platform, name) => {
@@ -585,24 +684,34 @@ export const useAppStore = create<AppState>()((set, get) => ({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    set((s) => ({
-      savedConfigs: {
-        ...s.savedConfigs,
-        [platform]: [...s.savedConfigs[platform], newConfig],
-      },
-      activeConfigId: { ...s.activeConfigId, [platform]: id },
-    }));
-    dbOps.upsertCalcConfig(newConfig, platform, true).catch(console.error);
+    const ok = await dbOps.upsertCalcConfig(newConfig, platform, true);
+    if (ok) {
+      set((s) => ({
+        savedConfigs: {
+          ...s.savedConfigs,
+          [platform]: [...s.savedConfigs[platform], newConfig],
+        },
+        activeConfigId: { ...s.activeConfigId, [platform]: id },
+      }));
+    } else {
+      console.error('保存配置失败，数据可能未同步');
+    }
   },
 
   switchConfig: async (platform, configId) => {
-    set({ activeConfigId: { ...get().activeConfigId, [platform]: configId } });
-    // 后台异步更新数据库中的 is_active 状态
+    // 先写数据库，再更新本地
     const configs = get().savedConfigs[platform] || [];
-    Promise.all(configs.map((config) => {
-      const isActive = config.id === configId;
-      return dbOps.upsertCalcConfig(config, platform, isActive);
-    })).catch(console.error);
+    const results = await Promise.all(
+      configs.map((config) => {
+        const isActive = config.id === configId;
+        return dbOps.upsertCalcConfig(config, platform, isActive);
+      })
+    );
+    if (results.some((r) => r)) {
+      set({ activeConfigId: { ...get().activeConfigId, [platform]: configId } });
+    } else {
+      console.error('切换配置失败，数据可能未同步');
+    }
   },
 
   // ====== 导入数据 ======
@@ -621,18 +730,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       configId: data.configId,
     };
 
-    set((s) => ({
-      rawOrders: {
-        ...s.rawOrders,
-        [platform]: [...s.rawOrders[platform], orderFile],
-      },
-    }));
-
-    // 合并 headers
-    get().mergeHeaders(platform, data.headers);
-
-    // 后台异步写入 Supabase
-    dbOps.insertOrderFile(
+    // 先写 Supabase，再更新本地
+    const ok = await dbOps.insertOrderFile(
       {
         id,
         platform,
@@ -644,26 +743,46 @@ export const useAppStore = create<AppState>()((set, get) => ({
         file_name: data.fileName || '',
       },
       data.rows
-    ).catch(console.error);
+    );
+    if (ok) {
+      set((s) => ({
+        rawOrders: {
+          ...s.rawOrders,
+          [platform]: [...s.rawOrders[platform], orderFile],
+        },
+      }));
+      // 合并 headers
+      get().mergeHeaders(platform, data.headers);
+    } else {
+      console.error('导入订单失败，数据可能未同步');
+    }
   },
 
   deleteOrderFile: async (platform, fileId) => {
-    set((s) => ({
-      rawOrders: {
-        ...s.rawOrders,
-        [platform]: s.rawOrders[platform].filter((f) => f.id !== fileId),
-      },
-    }));
-    dbOps.deleteOrderFile(fileId).catch(console.error);
+    const ok = await dbOps.deleteOrderFile(fileId);
+    if (ok) {
+      set((s) => ({
+        rawOrders: {
+          ...s.rawOrders,
+          [platform]: s.rawOrders[platform].filter((f) => f.id !== fileId),
+        },
+      }));
+    } else {
+      console.error('删除订单文件失败，数据可能未同步');
+    }
   },
 
   clearOrders: async (platform) => {
     const ids = get().rawOrders[platform].map((f) => f.id);
-    set((s) => ({
-      rawOrders: { ...s.rawOrders, [platform]: [] },
-      availableHeaders: { ...s.availableHeaders, [platform]: [] },
-    }));
-    dbOps.deleteOrderFilesBatch(ids).catch(console.error);
+    const ok = await dbOps.deleteOrderFilesBatch(ids);
+    if (ok) {
+      set((s) => ({
+        rawOrders: { ...s.rawOrders, [platform]: [] },
+        availableHeaders: { ...s.availableHeaders, [platform]: [] },
+      }));
+    } else {
+      console.error('清空订单失败，数据可能未同步');
+    }
   },
 
   mergeHeaders: (platform, headers) => {
