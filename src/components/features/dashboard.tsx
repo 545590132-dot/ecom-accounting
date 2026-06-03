@@ -117,8 +117,14 @@ function PlatformOverviewCard({
 }
 
 export function DashboardOverview() {
-  const { calculateAllSummaries, skuMappings } = useAppStore();
-  const summaries = calculateAllSummaries();
+  const skuMappings = useAppStore((s) => s.skuMappings);
+  const rawOrders = useAppStore((s) => s.rawOrders);
+  const savedConfigs = useAppStore((s) => s.savedConfigs);
+  const activeConfigId = useAppStore((s) => s.activeConfigId);
+  const calculateAllSummaries = useAppStore((s) => s.calculateAllSummaries);
+  
+  // 只在有订单数据变化时才重新计算
+  const summaries = React.useMemo(() => calculateAllSummaries(), [rawOrders, savedConfigs, activeConfigId, skuMappings]);
   const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
 
   const totalSales = platforms.reduce((s, p) => s + summaries[p].totalSales, 0);

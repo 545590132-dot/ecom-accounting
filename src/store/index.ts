@@ -39,20 +39,24 @@ const _pendingWrites: Array<{ label: string; execute: () => Promise<boolean>; re
 let _writing = false;
 
 async function _processWriteQueue() {
+  console.log(`[sync] _processWriteQueue called, queue=${_pendingWrites.length}, writing=${_writing}`);
   if (_writing) return;
   _writing = true;
   while (_pendingWrites.length > 0) {
     const task = _pendingWrites.shift()!;
+    const t0 = Date.now();
     try {
       const ok = await task.execute();
+      const elapsed = Date.now() - t0;
+      console.log(`[syncToRemote] ${task.label} ${ok ? 'OK' : 'FAILED'} in ${elapsed}ms${task.retries > 0 ? ` (retry ${task.retries})` : ''}`);
       if (!ok && task.retries < 3) {
-        // 失败了，放回队列稍后重试
         task.retries++;
         _pendingWrites.push(task);
-        // 等待 1 秒后重试
         await new Promise(r => setTimeout(r, 1000));
       }
-    } catch {
+    } catch (e) {
+      const elapsed = Date.now() - t0;
+      console.log(`[syncToRemote] ${task.label} ERROR in ${elapsed}ms:`, e);
       if (task.retries < 3) {
         task.retries++;
         _pendingWrites.push(task);
@@ -63,7 +67,15 @@ async function _processWriteQueue() {
   _writing = false;
 }
 
+// 设为 true 暂时跳过 Supabase 写入（调试用）
+const SKIP_REMOTE_WRITE = false;
+
 function syncToRemote(label: string, execute: () => Promise<boolean>) {
+  console.log(`[sync] queued: ${label}`);
+  if (SKIP_REMOTE_WRITE) {
+    console.log(`[sync] SKIPPED (debug mode): ${label}`);
+    return;
+  }
   _pendingWrites.push({ label, execute, retries: 0 });
   _processWriteQueue(); // 不 await，fire-and-forget
 }
@@ -362,18 +374,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateSkuMapping: (id, mapping) => {
+    const t0 = performance.now();
     const prev = get().skuMappings.find((m) => m.id === id);
     set((s) => ({ skuMappings: s.skuMappings.map((m) => (m.id === id ? { ...m, ...mapping } : m)) }));
+    console.log(`[PERF] updateSkuMapping: set() took=${(performance.now()-t0).toFixed(1)}ms`);
     const updated = get().skuMappings.find((m) => m.id === id);
     if (updated) {
-      const capturedPrev = prev;
       syncToRemote('updateSkuMapping', () => dbOps.upsertSkuMapping(updated as SkuMapping));
     }
   },
 
   deleteSkuMapping: (id) => {
+    const t0 = performance.now();
     const prev = get().skuMappings.find((m) => m.id === id);
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.id !== id) }));
+    console.log(`[PERF] deleteSkuMapping: set() took=${(performance.now()-t0).toFixed(1)}ms`);
     if (prev) {
       syncToRemote('deleteSkuMapping', () => dbOps.deleteSkuMapping(id));
     } else {
@@ -390,8 +405,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   /** 按平台清空 SKU 映射 — 单条 SQL 请求，极快 */
   clearSkuMappingsByPlatform: (platform: Platform) => {
+    const t0 = performance.now();
     const prev = get().skuMappings.filter((m) => m.platform === platform);
+    console.log(`[PERF] clearSkuMappingsByPlatform: filter prev=${prev.length}, took=${(performance.now()-t0).toFixed(1)}ms`);
+    const t1 = performance.now();
     set((s) => ({ skuMappings: s.skuMappings.filter((m) => m.platform !== platform) }));
+    console.log(`[PERF] clearSkuMappingsByPlatform: set() took=${(performance.now()-t1).toFixed(1)}ms, total=${(performance.now()-t0).toFixed(1)}ms`);
     syncToRemote('clearSkuMappingsByPlatform', () => dbOps.deleteSkuMappingsByPlatform(platform));
   },
 
@@ -727,6 +746,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const calculatedOrders: CalculatedOrder[] = [];
     let excludedCount = 0;
 
+    // 预构建 SKU 查找 Map，避免每行 O(N) find
+    const skuMap = new Map(state.skuMappings.map((m) => [m.sku, m]));
+
     for (const orderFile of orders) {
       const config = orderFile.configId
         ? (state.savedConfigs[platform] || []).find((c) => c.id === orderFile.configId) || activeConfig
@@ -812,7 +834,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         }
 
         const sku = getStrValue(mapping.sku);
-        const skuInfo = state.skuMappings.find((m) => m.sku === sku);
+        const skuInfo = skuMap.get(sku);
         const productName = skuInfo?.productName || sku;
         const purchasePrice = skuInfo?.purchasePrice || 0;
         const orderShopName = orderFile.shopName || '';

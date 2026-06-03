@@ -33,6 +33,7 @@ export function SkuManager() {
   const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '' });
   const [clearing, setClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [perfMs, setPerfMs] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const platformMappings = useMemo(
@@ -96,10 +97,15 @@ export function SkuManager() {
 
   const doClearPlatform = useCallback(() => {
     if (platformMappings.length === 0) return;
+    const t0 = performance.now();
     setClearing(true);
     setConfirmClear(false);
     clearSkuMappingsByPlatform(selectedPlatform);
     setClearing(false);
+    const elapsed = performance.now() - t0;
+    setPerfMs(Math.round(elapsed * 10) / 10);
+    console.log(`[PERF] clearPlatform: ${elapsed.toFixed(1)}ms`);
+    setTimeout(() => setPerfMs(null), 3000);
   }, [platformMappings.length, selectedPlatform, clearSkuMappingsByPlatform]);
 
   const startEdit = (mapping: SkuMapping) => {
@@ -243,6 +249,7 @@ export function SkuManager() {
           <span>筛选显示 <span className="font-medium text-foreground">{filteredMappings.length}</span> 条</span>
         )}
         {platformMappings.length > 0 && (
+          <>
           <Button
             variant="ghost"
             size="sm"
@@ -259,6 +266,10 @@ export function SkuManager() {
               '清空当前平台'
             )}
           </Button>
+          {perfMs !== null ? (
+            <span className="text-xs text-muted-foreground ml-2">操作耗时: {perfMs}ms</span>
+          ) : null}
+          </>
         )}
         {confirmClear && (
           <span className="flex items-center gap-2 text-xs">
@@ -353,7 +364,7 @@ export function SkuManager() {
                               <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => startEdit(mapping)}>
                                 <Edit3 className="h-3.5 w-3.5" />
                               </Button>
-                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => deleteSkuMapping(mapping.id)}>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => { const t0 = performance.now(); console.log('[PERF-UI] deleteSkuMapping START id=' + mapping.id); deleteSkuMapping(mapping.id); console.log(`[PERF-UI] deleteSkuMapping store call took=${(performance.now()-t0).toFixed(1)}ms`); }}>
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>

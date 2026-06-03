@@ -965,10 +965,17 @@ function PlatformCalcConfig({ platform }: { platform: Platform }) {
 
 // 平台统计结果组件
 function PlatformStats({ platform }: { platform: Platform }) {
-  const { calculateSummary, calculateSkuSummaries, shopNames, rawOrders, savedConfigs, activeConfigId, getActiveConfig } = useAppStore();
+  const calculateSummary = useAppStore((s) => s.calculateSummary);
+  const calculateSkuSummaries = useAppStore((s) => s.calculateSkuSummaries);
+  const shopNames = useAppStore((s) => s.shopNames);
+  const rawOrders = useAppStore((s) => s.rawOrders);
+  const savedConfigs = useAppStore((s) => s.savedConfigs);
+  const activeConfigId = useAppStore((s) => s.activeConfigId);
+  const getActiveConfig = useAppStore((s) => s.getActiveConfig);
+  const skuMappings = useAppStore((s) => s.skuMappings);
   const activeConfig = getActiveConfig(platform);
-  const summary = calculateSummary(platform);
-  const skuSummaries = calculateSkuSummaries(platform);
+  const summary = React.useMemo(() => calculateSummary(platform), [rawOrders, savedConfigs, activeConfigId, skuMappings, platform]);
+  const skuSummaries = React.useMemo(() => calculateSkuSummaries(platform), [rawOrders, savedConfigs, activeConfigId, skuMappings, platform]);
   const platformConfig = PLATFORM_CONFIG[platform];
   const [viewMode, setViewMode] = useState<'orders' | 'sku'>('sku');
   const [filterShops, setFilterShops] = useState<string[]>([]); // 多选店铺，空数组=全部
