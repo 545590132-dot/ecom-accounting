@@ -854,7 +854,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           platformFee: effectivePlatformFee,
           shippingFee: effectiveShippingFee,
           commission: effectiveCommission,
-          purchasePrice: isCountOnlyQuantity ? 0 : purchasePrice,
+          purchasePrice,
         };
 
         const computedTotalAmount = evalFormula(config.formulas.totalAmount, formulaContext);
@@ -868,7 +868,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
         const profitRate = evalFormula(config.formulas.profitRate, formulaContext);
 
-        const purchaseCost = isCountOnlyQuantity ? 0 : purchasePrice * quantity;
+        const purchaseCost = purchasePrice * quantity;
 
         calculatedOrders.push({
           id: generateId(),
@@ -885,7 +885,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           shippingFee: effectiveShippingFee,
           commission: effectiveCommission,
           netAmount,
-          purchasePrice: isCountOnlyQuantity ? 0 : purchasePrice,
+          purchasePrice,
           purchaseCost,
           profit,
           profitRate,
