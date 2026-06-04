@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { useAppStore } from '@/store';
 import { formatCurrency, PLATFORM_CONFIG } from '@/types';
 import type { Platform, PlatformSummary, CalculatedOrder } from '@/types';
@@ -417,7 +417,7 @@ export function DashboardOverview() {
             <Card>
               <CardContent className="pt-6 pb-4">
                 <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={chartData} margin={{ top: 30, right: 20, left: 10, bottom: 5 }}>
+                  <BarChart data={chartData} margin={{ top: 30, right: 20, left: 10, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis
                       dataKey="month"
@@ -437,17 +437,19 @@ export function DashboardOverview() {
                     />
                     <Tooltip content={<ChartTooltip />} />
                     <Legend
-                      verticalAlign="top"
+                      verticalAlign="bottom"
                       height={36}
-                      formatter={(value: string) => <span className="text-sm text-slate-600">{value}</span>}
+                      iconType="circle"
+                      iconSize={10}
+                      formatter={(value: string) => <span className="text-sm font-medium text-slate-700">{value}</span>}
                     />
-                    <Bar dataKey="Shopee" fill="#ee4d2d" radius={[2, 2, 0, 0]} maxBarSize={40}>
+                    <Bar dataKey="Shopee" fill="#ee4d2d" radius={[2, 2, 0, 0]} maxBarSize={40} name="Shopee">
                       <LabelList dataKey="Shopee" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0)} />
                     </Bar>
-                    <Bar dataKey="Lazada" fill="#0f146d" radius={[2, 2, 0, 0]} maxBarSize={40}>
+                    <Bar dataKey="Lazada" fill="#0f146d" radius={[2, 2, 0, 0]} maxBarSize={40} name="Lazada">
                       <LabelList dataKey="Lazada" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0)} />
                     </Bar>
-                    <Bar dataKey="TikTok" fill="#fe2c55" radius={[2, 2, 0, 0]} maxBarSize={40}>
+                    <Bar dataKey="TikTok" fill="#fe2c55" radius={[2, 2, 0, 0]} maxBarSize={40} name="TikTok">
                       <LabelList dataKey="TikTok" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0)} />
                     </Bar>
                   </BarChart>

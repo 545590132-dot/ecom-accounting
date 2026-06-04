@@ -48,6 +48,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         <div className="text-center">
           <div className="inline-block w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin mb-4" />
           <p className="text-slate-600 text-sm">正在加载数据...</p>
+          <p className="text-slate-400 text-xs mt-1">首次加载可能需要数秒</p>
         </div>
       </div>
     );

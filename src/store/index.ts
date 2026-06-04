@@ -245,31 +245,37 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
       let anySuccess = false;
 
-      // 先测试 Supabase 连接
-      anySuccess = await dbOps.testConnection();
+      // 并行测试连接 + 加载所有平台数据（提升首屏速度）
+      const connectionPromise = dbOps.testConnection();
 
-      for (const p of platforms) {
-        const results = await Promise.allSettled([
-          dbOps.getSkuMappings(p),
-          dbOps.getShopNames(p),
-          dbOps.getCalcConfigs(p),
-          dbOps.getOrderFiles(p),
-        ]);
+      const platformResults = await Promise.allSettled(
+        platforms.map(async (p) => {
+          const results = await Promise.allSettled([
+            dbOps.getSkuMappings(p),
+            dbOps.getShopNames(p),
+            dbOps.getCalcConfigs(p),
+            dbOps.getOrderFiles(p),
+          ]);
 
-        const skus = results[0].status === 'fulfilled' ? results[0].value : [];
-        const shops = results[1].status === 'fulfilled' ? results[1].value : [];
-        const configs = results[2].status === 'fulfilled' ? results[2].value : [];
-        const files = results[3].status === 'fulfilled' ? results[3].value : [];
+          const skus = results[0].status === 'fulfilled' ? results[0].value : [];
+          const shops = results[1].status === 'fulfilled' ? results[1].value : [];
+          const configs = results[2].status === 'fulfilled' ? results[2].value : [];
+          const files = results[3].status === 'fulfilled' ? results[3].value : [];
 
-        if (results.some(r => r.status === 'fulfilled' && (r.value as unknown[]).length >= 0)) {
-          anySuccess = true;
-        }
-
-        for (const r of results) {
-          if (r.status === 'rejected') {
-            console.warn(`加载 ${p} 数据失败:`, r.reason);
+          for (const r of results) {
+            if (r.status === 'rejected') {
+              console.warn(`加载 ${p} 数据失败:`, r.reason);
+            }
           }
-        }
+
+          return { platform: p, skus, shops, configs, files };
+        })
+      );
+
+      for (const pr of platformResults) {
+        if (pr.status !== 'fulfilled') continue;
+        const { platform: p, skus, shops, configs, files } = pr.value;
+        anySuccess = true;
 
         allSkuMappings.push(...skus);
         allShopNames.push(...shops);
@@ -304,6 +310,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         }
         availableHeaders[p] = Array.from(headersSet).filter(Boolean);
       }
+
+      // 等待连接测试结果
+      anySuccess = await connectionPromise;
 
       // 如果 Supabase 全部失败，从 localStorage 恢复
       if (!anySuccess) {
@@ -814,14 +823,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }
         }
 
-        if (filterRules.excludeZeroAmount) {
-          const checkTotal = (unitPrice + platformDiscount) * 1.7;
-          if (checkTotal === 0) {
-            excludedCount++;
-            continue;
-          }
-        }
-
+        // countOnlyQuantity（只统计数量不统计金额的订单）:
+        // Shopee: 归零商品金额(unitPrice)，保留各项服务费(commission/platformFee/shippingFee/platformDiscount)
+        // TikTok/Lazada: 所有金额归零
+        // 所有平台: 数量和采购成本正常计入
         let isCountOnlyQuantity = false;
         if (filterRules.quantityOnlyStatusField && filterRules.quantityOnlyStatusValues.length > 0) {
           const rawValue = getStrValue(filterRules.quantityOnlyStatusField).trim();
@@ -833,17 +838,29 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }
         }
 
+        // 获取 SKU 和采购价（在过滤判断之前，purchasePrice 用于公式计算）
         const sku = getStrValue(mapping.sku);
         const skuInfo = skuMap.get(sku);
         const productName = skuInfo?.productName || sku;
         const purchasePrice = skuInfo?.purchasePrice || 0;
+
+        // excludeZeroAmount：排除零金额行
+        // 注意：countOnlyQuantity 行的金额会被归零，但这些行应该被保留（计入数量）
+        // 所以 excludeZeroAmount 只对非 countOnlyQuantity 行生效
+        if (filterRules.excludeZeroAmount && !isCountOnlyQuantity) {
+          const checkTotal = evalFormula(config.formulas.totalAmount, {
+            quantity, unitPrice, platformDiscount,
+            platformFee, shippingFee, commission, purchasePrice,
+          });
+          if (checkTotal === 0) {
+            excludedCount++;
+            continue;
+          }
+        }
+
         const orderShopName = orderFile.shopName || '';
         const orderDate = orderFile.yearMonth || '';
 
-        // countOnlyQuantity（只统计数量不统计金额的订单）:
-        // Shopee: 归零商品金额(unitPrice)，保留各项服务费(commission/platformFee/shippingFee/platformDiscount)
-        // TikTok/Lazada: 所有金额归零
-        // 所有平台: 数量和采购成本正常计入
         const effectiveUnitPrice = isCountOnlyQuantity ? 0 : unitPrice;
         const effectiveCommission = isCountOnlyQuantity && platform !== 'shopee' ? 0 : commission;
         const effectivePlatformFee = isCountOnlyQuantity && platform !== 'shopee' ? 0 : platformFee;
