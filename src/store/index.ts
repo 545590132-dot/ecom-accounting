@@ -796,7 +796,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const shippingFee = getNumValue(mapping.shippingFee);
         const commission = getNumValue(mapping.commission);
         const rawQuantity = getNumValue(mapping.quantity);
-        const quantity = config.countQuantityAsRows ? 1 : rawQuantity;
+        let quantity = config.countQuantityAsRows ? 1 : rawQuantity;
         const unitPrice = getNumValue(mapping.unitPrice);
         const platformDiscount = getNumValue(mapping.platformDiscount);
 
@@ -830,6 +830,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
           );
           if (shouldCountOnly) {
             countOnlyQuantity = true;
+            // 退货行：有效数量 = 原始数量 - 退回数量（避免退货商品虚增总商品数量）
+            const returnedQty = getNumValue(filterRules.quantityOnlyStatusField);
+            quantity = Math.max(0, rawQuantity - returnedQty);
           }
         }
 
