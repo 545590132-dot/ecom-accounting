@@ -12,7 +12,7 @@ import {
 } from '@/types';
 import * as dbOps from '@/lib/db';
 
-// ====== 自动持久化到 localStorage（双重备份） ======
+// ====== 自动持久化到 localStorage（仅备份配置，不备份订单数据） ======
 interface LocalPersistState {
   skuMappings: SkuMapping[];
   shopNames: ShopName[];
@@ -21,13 +21,14 @@ interface LocalPersistState {
 }
 
 function persistToLocal(state: LocalPersistState) {
-  dbOps.saveAllToLocalStorage({
-    skuMappings: state.skuMappings,
-    shopNames: state.shopNames,
-    savedConfigs: state.savedConfigs,
-    rawOrders: { shopee: [], lazada: [], tiktok: [] }, // rawOrders 数据量大，不在每次变更时持久化
-    activeConfigId: state.activeConfigId,
-  });
+  try {
+    localStorage.setItem('ecom-acct-configs', JSON.stringify({
+      skuMappings: state.skuMappings,
+      shopNames: state.shopNames,
+      savedConfigs: state.savedConfigs,
+      activeConfigId: state.activeConfigId,
+    }));
+  } catch { /* ignore */ }
 }
 
 let _persistTimer: number | null = null;
@@ -315,31 +316,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const connectionOk = await connectionPromise;
       const finalAnySuccess = anySuccess || connectionOk;
 
-      // 如果 Supabase 全部失败，从 localStorage 恢复
-      if (!finalAnySuccess) {
-        console.warn('Supabase 全部失败，从 localStorage 恢复数据');
-        const localData = dbOps.loadAllFromLocalStorage();
-        if (localData) {
-          const restoredActiveConfigId: Record<Platform, string> = { shopee: '', lazada: '', tiktok: '' };
-          for (const p of platforms) {
-            const configs = localData.savedConfigs[p];
-            if (configs && configs.length > 0) {
-              restoredActiveConfigId[p] = localData.activeConfigId?.[p] || configs[0].id;
-            }
-          }
-          set({
-            skuMappings: localData.skuMappings,
-            shopNames: localData.shopNames,
-            savedConfigs: localData.savedConfigs,
-            activeConfigId: restoredActiveConfigId,
-            rawOrders: localData.rawOrders,
-            availableHeaders,
-            dbConnected: false,
-          });
-          return;
-        }
-      }
-
+      // Supabase 是唯一数据源，不再从 localStorage 恢复 rawOrders
+      // （localStorage 中的旧数据可能是之前有 bug 的版本保存的，恢复会导致数据错乱）
       set({
         skuMappings: allSkuMappings,
         shopNames: allShopNames,
@@ -349,23 +327,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
         availableHeaders,
         dbConnected: finalAnySuccess,
       });
-      // 加载成功后保存一份快照到 localStorage
+      // 加载成功后保存一份配置快照到 localStorage（仅配置，不含 rawOrders）
       if (finalAnySuccess) {
         try { persistSnapshot(); } catch { /* ignore */ }
       }
     } catch (error) {
       console.error('加载数据失败:', error);
-      // 尝试从 localStorage 恢复
-      const localData = dbOps.loadAllFromLocalStorage();
-      if (localData) {
-        set({
-          skuMappings: localData.skuMappings,
-          shopNames: localData.shopNames,
-          savedConfigs: localData.savedConfigs,
-          rawOrders: localData.rawOrders,
-          dbConnected: false,
-        });
-      }
+      // Supabase 失败时不恢复 localStorage 数据，避免旧数据覆盖
+      // 用户可以刷新页面重试
     } finally {
       set({ isLoading: false });
     }
@@ -1011,8 +980,11 @@ function persistSnapshot() {
   });
 }
 
-// 页面关闭/刷新时紧急保存
+// 页面关闭/刷新时紧急保存（仅配置）
 if (typeof window !== 'undefined') {
+  // 清除旧的 localStorage 数据（含 rawOrders 的旧格式，可能导致数据错乱）
+  try { localStorage.removeItem('ecommerce-accounting-data'); } catch { /* ignore */ }
+
   window.addEventListener('beforeunload', () => {
     try { persistSnapshot(); } catch { /* ignore */ }
   });
