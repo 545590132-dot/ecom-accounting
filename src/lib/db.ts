@@ -376,7 +376,8 @@ export async function deleteCalcConfig(id: string): Promise<boolean> {
 // ====== 原始订单文件 ======
 
 export async function getOrderFiles(platform: Platform): Promise<RawOrderData[]> {
-  return safeOp(async () => {
+  // 核心数据加载——失败时必须抛出异常，让 loadAllData 能区分"无数据"和"加载失败"
+  const loadFiles = async (): Promise<RawOrderData[]> => {
     // 分页查询文件
     const files = await fetchAll(
       supabase.from('raw_order_files').select('*').eq('platform', platform),
@@ -384,57 +385,37 @@ export async function getOrderFiles(platform: Platform): Promise<RawOrderData[]>
     );
     if (files.length === 0) return [];
 
-    const fileIds = files.map((f: Record<string, unknown>) => f.id as string);
-
-    // 分页查询行数据（按文件 ID 批量，每个 batch 独立 try/catch 防止部分失败导致全部丢失）
-    const allRows: Record<string, unknown>[] = [];
-    const idBatchSize = 50; // IN 子句最多 50 个 ID（降低单次请求量提高成功率）
-    let batchFailCount = 0;
-    for (let i = 0; i < fileIds.length; i += idBatchSize) {
-      const idBatch = fileIds.slice(i, i + idBatchSize);
-      try {
-        const batchRows = await fetchAll(
-          supabase.from('order_rows').select('*').in('file_id', idBatch),
-          (row: Record<string, unknown>) => row
-        );
-        allRows.push(...batchRows);
-      } catch (batchErr) {
-        batchFailCount++;
-        console.error(`getOrderFiles batch ${i / idBatchSize + 1} failed:`, batchErr);
-        // 单个 batch 失败不中断，继续加载其他 batch
-      }
-    }
-    if (batchFailCount > 0) {
-      console.warn(`getOrderFiles(${platform}): ${batchFailCount} batches failed, loaded ${allRows.length} rows out of expected`);
-    }
-
+    // 按文件逐个加载行数据（避免大查询超时导致整批数据丢失）
     const rowsByFile: Record<string, Record<string, string | number>[]> = {};
-    for (const row of allRows) {
-      const fileId = row.file_id as string;
-      const rowData = (row.row_data as Record<string, string | number>) || {};
-      if (!rowsByFile[fileId]) rowsByFile[fileId] = [];
-      rowsByFile[fileId].push(rowData);
-    }
+    let fileFailCount = 0;
 
-    // 去重：移除同一文件中完全相同的重复行（保留首次出现）
-    for (const fid of Object.keys(rowsByFile)) {
-      const rows = rowsByFile[fid];
-      const seen = new Set<string>();
-      const deduped: Record<string, string | number>[] = [];
-      let dupeCount = 0;
-      for (const r of rows) {
-        const key = JSON.stringify(r);
-        if (seen.has(key)) {
-          dupeCount++;
-        } else {
-          seen.add(key);
-          deduped.push(r);
+    for (const f of files) {
+      const fileId = f.id as string;
+      try {
+        const fileRows = await fetchAll(
+          supabase.from('order_rows').select('row_data').eq('file_id', fileId),
+          (row: Record<string, unknown>) => (row.row_data as Record<string, string | number>) || {}
+        );
+        rowsByFile[fileId] = fileRows;
+      } catch (fileErr) {
+        fileFailCount++;
+        console.error(`getOrderFiles: 加载文件 ${fileId} 的行数据失败:`, fileErr);
+        // 单个文件失败时重试一次
+        try {
+          const fileRows = await fetchAll(
+            supabase.from('order_rows').select('row_data').eq('file_id', fileId),
+            (row: Record<string, unknown>) => (row.row_data as Record<string, string | number>) || {}
+          );
+          rowsByFile[fileId] = fileRows;
+          fileFailCount--;
+        } catch {
+          rowsByFile[fileId] = []; // 重试也失败，设为空但不影响其他文件
         }
       }
-      if (dupeCount > 0) {
-        console.warn(`文件 ${fid} 发现 ${dupeCount} 条重复行，已自动去重`);
-        rowsByFile[fid] = deduped;
-      }
+    }
+
+    if (fileFailCount > 0) {
+      console.warn(`getOrderFiles(${platform}): ${fileFailCount}/${files.length} 个文件加载失败`);
     }
 
     return files.map((f: Record<string, unknown>) => ({
@@ -448,7 +429,23 @@ export async function getOrderFiles(platform: Platform): Promise<RawOrderData[]>
       yearMonth: (f.year_month as string) || undefined,
       configId: (f.config_id as string) || undefined,
     }));
-  }, [], 'getOrderFiles');
+  };
+
+  // 重试机制：最多重试 3 次
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await loadFiles();
+    } catch (e) {
+      if (attempt < 2) {
+        console.warn(`getOrderFiles(${platform}) 第 ${attempt + 1} 次加载失败，${1 + attempt}秒后重试...`, e);
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      } else {
+        console.error(`getOrderFiles(${platform}) 3次加载均失败:`, e);
+        throw e; // 向上抛出，由 loadAllData 处理
+      }
+    }
+  }
+  throw new Error(`getOrderFiles(${platform}) unreachable`);
 }
 
 export async function insertOrderFile(
