@@ -34,7 +34,7 @@ import {
   Upload, Download, Trash2, FileSpreadsheet, Settings2,
   BarChart3, Package, TrendingUp, TrendingDown,
   ShoppingCart, Info, AlertCircle, Save, Plus, Pencil, Check, X, Store, Filter,
-  ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, Hash,
+  ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, Hash, Calculator,
 } from 'lucide-react';
 
 type SortField = 'totalQuantity' | 'totalSales' | 'totalProfit' | 'profitRate';
@@ -173,6 +173,25 @@ function PlatformDataImport({ platform }: { platform: Platform }) {
                       <div className="font-medium text-sm">{order.fileName}</div>
                       <div className="text-xs text-muted-foreground">
                         {order.rows.length} 条记录 · {order.headers.length} 个字段 · {order.yearMonth ? `${order.yearMonth}` : '未设年月'} · {new Date(order.importTime).toLocaleString('zh-CN')}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {order.shopName && (
+                          <Badge variant="outline" className="text-[11px] px-2 py-0 h-5 border-blue-300 text-blue-700 bg-blue-50 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-700">
+                            <Store className="h-3 w-3 mr-1" />{order.shopName}
+                          </Badge>
+                        )}
+                        {order.configId && (() => {
+                          const config = platformConfigs.find(c => c.id === order.configId);
+                          return config ? (
+                            <Badge variant="outline" className="text-[11px] px-2 py-0 h-5 border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-700">
+                              <Calculator className="h-3 w-3 mr-1" />{config.name}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[11px] px-2 py-0 h-5 border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700">
+                              <Calculator className="h-3 w-3 mr-1" />未关联方案
+                            </Badge>
+                          );
+                        })()}
                       </div>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {order.headers.slice(0, 8).map((h) => (
