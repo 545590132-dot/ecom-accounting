@@ -69,6 +69,7 @@ export interface SavedCalcConfig {
   filterRules: OrderFilterRules; // 订单过滤规则
   countQuantityAsRows: boolean; // 数量按计数（每行=1）而非求和，适用于Lazada等平台
   profitRateRedThreshold: number | null; // 利润率低于此值标红，null 表示不标红
+  isActive: boolean; // 是否为当前平台活跃配置
   createdAt: number;
   updatedAt: number;
 }

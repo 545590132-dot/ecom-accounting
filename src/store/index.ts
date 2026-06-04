@@ -132,6 +132,7 @@ function createDefaultConfig(platform: string): SavedCalcConfig {
     filterRules: { ...DEFAULT_FILTER_RULES },
     countQuantityAsRows: platform === 'lazada',
     profitRateRedThreshold: platform === 'tiktok' ? 25 : null,
+    isActive: true,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -294,10 +295,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
             console.warn(`保存 ${p} 默认配置失败:`, e)
           );
         } else {
-          activeConfigId[p] = savedConfigs[p][0].id;
+          // 优先使用 is_active 的配置
+          const activeOne = savedConfigs[p].find((c) => c.isActive);
+          activeConfigId[p] = activeOne ? activeOne.id : savedConfigs[p][0].id;
         }
 
-        rawOrders[p] = files;
+        // 数据保护：如果 Supabase 请求返回空数据但内存中已有数据，不覆盖（防止网络波动导致数据"丢失"）
+        const existingFiles = get().rawOrders[p] || [];
+        if (files.length > 0 || existingFiles.length === 0) {
+          rawOrders[p] = files;
+        } else {
+          rawOrders[p] = existingFiles;
+          console.warn(`${p} 数据加载返回空，保留内存中现有 ${existingFiles.length} 个文件`);
+        }
         const headersSet = new Set<string>();
         for (const file of files) {
           for (const h of file.headers) {

@@ -997,16 +997,21 @@ function PlatformStats({ platform }: { platform: Platform }) {
     return true;
   });
 
-  // 筛选后的商品汇总（仅按商品名称分类，不按 SKU 分类）
+  const showShopColumn = filterShops.length > 0;
+
+  // 筛选后的商品汇总（全部店铺时按商品名称合并，单店铺时按商品+店铺分类）
   const filteredSkuSummaries = (() => {
+    const isAllShops = filterShops.length === 0;
     const map = new Map<string, SkuSummary>();
     for (const order of filteredOrders) {
-      const key = `${order.productName || order.sku}|${order.shopName || '__all__'}`;
-      if (!map.has(key)) {
-        map.set(key, {
+      const groupKey = isAllShops
+        ? (order.productName || order.sku)
+        : `${order.productName || order.sku}|${order.shopName || '__all__'}`;
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
           sku: order.sku,
           productName: order.productName,
-          shopName: order.shopName || '-',
+          shopName: isAllShops ? '-' : (order.shopName || '-'),
           purchasePrice: order.purchasePrice,
           totalQuantity: 0,
           totalSales: 0,
@@ -1019,7 +1024,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
           orderCount: 0,
         });
       }
-      const s = map.get(key)!;
+      const s = map.get(groupKey)!;
       s.totalQuantity += order.quantity;
       s.totalSales += order.totalAmount;
       s.totalPlatformFee += order.platformFee;
@@ -1406,7 +1411,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
 
       {/* 数据表格 */}
       {viewMode === 'sku' ? (
-        <SkuSummaryTable summaries={filteredSkuSummaries} profitRateRedThreshold={activeConfig?.profitRateRedThreshold ?? null} />
+        <SkuSummaryTable summaries={filteredSkuSummaries} profitRateRedThreshold={activeConfig?.profitRateRedThreshold ?? null} showShopColumn={showShopColumn} />
       ) : (
         <OrderDetailTable orders={filteredOrders} profitRateRedThreshold={activeConfig?.profitRateRedThreshold ?? null} />
       )}
@@ -1417,7 +1422,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
 // 商品统计表格（按商品名称分类）
 type SortDirection = 'asc' | 'desc';
 
-function SkuSummaryTable({ summaries, profitRateRedThreshold }: { summaries: SkuSummary[]; profitRateRedThreshold: number | null }) {
+function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn }: { summaries: SkuSummary[]; profitRateRedThreshold: number | null; showShopColumn: boolean }) {
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
@@ -1451,7 +1456,7 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold }: { summaries: Sku
             <TableHeader>
               <TableRow>
                 <TableHead>商品名称</TableHead>
-                <TableHead className="w-[100px]">店铺名称</TableHead>
+                {showShopColumn && <TableHead className="w-[100px]">店铺名称</TableHead>}
                 <TableHead className={`w-[80px] text-right ${sortableCls}`} onClick={() => handleSort('totalQuantity')}>
                   销量<SortIcon field="totalQuantity" sortField={currentSortField} sortDirection={sortDirection} />
                 </TableHead>
@@ -1473,7 +1478,7 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold }: { summaries: Sku
               {sortedSummaries.map((s) => (
                 <TableRow key={`${s.productName}-${s.shopName}`}>
                   <TableCell className="font-medium">{s.productName || '-'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>
+                  {showShopColumn && <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>}
                   <TableCell className="text-right font-mono">{s.totalQuantity}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.totalSales)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.avgUnitPrice)}</TableCell>

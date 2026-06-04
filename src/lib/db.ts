@@ -72,13 +72,22 @@ export async function testConnection(): Promise<boolean> {
 // ====== 通用 Supabase 操作封装 ======
 // 如果 Supabase 不可用，静默失败（数据仍保存在 localStorage）
 
-async function safeOp<T>(op: () => Promise<T>, fallback: T, label: string): Promise<T> {
-  try {
-    return await op();
-  } catch (e) {
-    console.warn(`${label} 操作失败:`, e);
-    return fallback;
+async function safeOp<T>(op: () => Promise<T>, fallback: T, label: string, retries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const result = await op();
+      return result;
+    } catch (e) {
+      const isLastAttempt = attempt === retries;
+      if (isLastAttempt) {
+        console.error(`${label} failed after ${retries} retries:`, e);
+        return fallback;
+      }
+      console.warn(`${label} failed, retry ${attempt + 1}...`);
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
   }
+  return fallback;
 }
 
 // ====== 通用分页查询（突破 Supabase 1000 行默认限制） ======
@@ -313,6 +322,7 @@ function mapRowToConfig(row: Record<string, unknown>): SavedCalcConfig {
     },
     countQuantityAsRows: fr.countQuantityAsRows === true || row.count_quantity_as_rows === true,
     profitRateRedThreshold: (row.profit_rate_red_threshold as number | null) ?? null,
+    isActive: row.is_active === true,
     createdAt: Number(row.created_at) || Date.now(),
     updatedAt: Number(row.updated_at) || Date.now(),
   };
