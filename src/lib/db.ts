@@ -102,7 +102,10 @@ async function fetchAll<T>(
   let hasMore = true;
   while (hasMore) {
     const { data, error } = await query.range(offset, offset + pageSize - 1);
-    if (error) { console.error('fetchAll error:', error); break; }
+    if (error) {
+      console.error('fetchAll error:', error);
+      throw new Error(`fetchAll failed at offset ${offset}: ${error.message}`);
+    }
     const rows = (data || []) as Record<string, unknown>[];
     allRows.push(...rows.map(mapRow));
     hasMore = rows.length === pageSize;
@@ -383,16 +386,26 @@ export async function getOrderFiles(platform: Platform): Promise<RawOrderData[]>
 
     const fileIds = files.map((f: Record<string, unknown>) => f.id as string);
 
-    // 分页查询行数据（按文件 ID 批量）
+    // 分页查询行数据（按文件 ID 批量，每个 batch 独立 try/catch 防止部分失败导致全部丢失）
     const allRows: Record<string, unknown>[] = [];
-    const idBatchSize = 100; // IN 子句最多 100 个 ID
+    const idBatchSize = 50; // IN 子句最多 50 个 ID（降低单次请求量提高成功率）
+    let batchFailCount = 0;
     for (let i = 0; i < fileIds.length; i += idBatchSize) {
       const idBatch = fileIds.slice(i, i + idBatchSize);
-      const batchRows = await fetchAll(
-        supabase.from('order_rows').select('*').in('file_id', idBatch),
-        (row: Record<string, unknown>) => row
-      );
-      allRows.push(...batchRows);
+      try {
+        const batchRows = await fetchAll(
+          supabase.from('order_rows').select('*').in('file_id', idBatch),
+          (row: Record<string, unknown>) => row
+        );
+        allRows.push(...batchRows);
+      } catch (batchErr) {
+        batchFailCount++;
+        console.error(`getOrderFiles batch ${i / idBatchSize + 1} failed:`, batchErr);
+        // 单个 batch 失败不中断，继续加载其他 batch
+      }
+    }
+    if (batchFailCount > 0) {
+      console.warn(`getOrderFiles(${platform}): ${batchFailCount} batches failed, loaded ${allRows.length} rows out of expected`);
     }
 
     const rowsByFile: Record<string, Record<string, string | number>[]> = {};

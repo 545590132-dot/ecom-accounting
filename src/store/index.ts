@@ -262,7 +262,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
           const skus = results[0].status === 'fulfilled' ? results[0].value : [];
           const shops = results[1].status === 'fulfilled' ? results[1].value : [];
           const configs = results[2].status === 'fulfilled' ? results[2].value : [];
-          const files = results[3].status === 'fulfilled' ? results[3].value : [];
+          const filesResult = results[3];
+          const filesLoadOk = filesResult.status === 'fulfilled';
+          const files = filesLoadOk ? (filesResult as PromiseFulfilledResult<RawOrderData[]>).value : [];
 
           for (const r of results) {
             if (r.status === 'rejected') {
@@ -270,13 +272,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
             }
           }
 
-          return { platform: p, skus, shops, configs, files };
+          return { platform: p, skus, shops, configs, files, filesLoadOk };
         })
       );
 
       for (const pr of platformResults) {
         if (pr.status !== 'fulfilled') continue;
-        const { platform: p, skus, shops, configs, files } = pr.value;
+        const { platform: p, skus, shops, configs, files, filesLoadOk } = pr.value;
         anySuccess = true;
 
         allSkuMappings.push(...skus);
@@ -300,16 +302,31 @@ export const useAppStore = create<AppState>()((set, get) => ({
           activeConfigId[p] = activeOne ? activeOne.id : savedConfigs[p][0].id;
         }
 
-        // 数据保护：如果 Supabase 请求返回空数据但内存中已有数据，不覆盖（防止网络波动导致数据"丢失"）
+        // 数据保护：文件数据加载失败时不覆盖已有数据
         const existingFiles = get().rawOrders[p] || [];
-        if (files.length > 0 || existingFiles.length === 0) {
+        if (!filesLoadOk) {
+          // 文件加载请求失败 — 保留现有数据
+          if (existingFiles.length > 0) {
+            rawOrders[p] = existingFiles;
+            console.warn(`${p} 文件加载请求失败，保留内存中现有 ${existingFiles.length} 个文件`);
+          } else {
+            // 首次加载就失败 — 无法恢复，使用空数组
+            rawOrders[p] = [];
+            console.error(`${p} 首次加载失败，无现有数据可恢复`);
+          }
+        } else if (files.length > 0) {
+          // 成功加载到数据
           rawOrders[p] = files;
-        } else {
+        } else if (existingFiles.length > 0) {
+          // 加载成功但返回空数据，且内存中有数据 — 可能是临时异常，保留旧数据
           rawOrders[p] = existingFiles;
-          console.warn(`${p} 数据加载返回空，保留内存中现有 ${existingFiles.length} 个文件`);
+          console.warn(`${p} 加载返回空数据，保留内存中现有 ${existingFiles.length} 个文件`);
+        } else {
+          // 真的没有数据（首次使用或已清空）
+          rawOrders[p] = [];
         }
         const headersSet = new Set<string>();
-        for (const file of files) {
+        for (const file of (rawOrders[p] || [])) {
           for (const h of file.headers) {
             headersSet.add(h.trim());
           }
