@@ -840,20 +840,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const orderShopName = orderFile.shopName || '';
         const orderDate = orderFile.yearMonth || '';
 
-        // countOnlyQuantity: 只统计数量，不统计金额（所有金额归零）
+        // countOnlyQuantity: 只统计数量，不统计商品金额（仍统计各项服务费）
+        // 归零的：unitPrice（商品金额）
+        // 保留的：commission（平台服务费）、platformFee（交易手续费）、shippingFee（平台佣金）、platformDiscount（运费）
         const effectiveUnitPrice = isCountOnlyQuantity ? 0 : unitPrice;
-        const effectivePlatformDiscount = isCountOnlyQuantity ? 0 : platformDiscount;
-        const effectiveCommission = isCountOnlyQuantity ? 0 : commission;
-        const effectivePlatformFee = isCountOnlyQuantity ? 0 : platformFee;
-        const effectiveShippingFee = isCountOnlyQuantity ? 0 : shippingFee;
 
         const formulaContext: Record<string, number> = {
           quantity,
           unitPrice: effectiveUnitPrice,
-          platformDiscount: effectivePlatformDiscount,
-          platformFee: effectivePlatformFee,
-          shippingFee: effectiveShippingFee,
-          commission: effectiveCommission,
+          platformDiscount,
+          platformFee,
+          shippingFee,
+          commission,
           purchasePrice,
         };
 
@@ -879,11 +877,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
           orderDate,
           quantity,
           unitPrice: effectiveUnitPrice,
-          platformDiscount: effectivePlatformDiscount,
+          platformDiscount,
           totalAmount: computedTotalAmount,
-          platformFee: effectivePlatformFee,
-          shippingFee: effectiveShippingFee,
-          commission: effectiveCommission,
+          platformFee,
+          shippingFee,
+          commission,
           netAmount,
           purchasePrice,
           purchaseCost,
