@@ -822,17 +822,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }
         }
 
+        let isCountOnlyQuantity = false;
         if (filterRules.quantityOnlyStatusField && filterRules.quantityOnlyStatusValues.length > 0) {
           const rawValue = getStrValue(filterRules.quantityOnlyStatusField).trim();
           const shouldCountOnly = filterRules.quantityOnlyStatusValues.some(
             (v) => v.trim().toLowerCase() === rawValue.toLowerCase()
           );
           if (shouldCountOnly) {
-            // 退货行：独立退货订单行，与正常订单行不重叠（Order ID 无交集）
-            // 这些退货行不应计入统计——它们不产生销售，也不是新订单
-            // 直接跳过，不计入 totalQuantity、totalOrders 等任何汇总
-            excludedCount++;
-            continue;
+            isCountOnlyQuantity = true;
           }
         }
 
@@ -843,14 +840,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const orderShopName = orderFile.shopName || '';
         const orderDate = orderFile.yearMonth || '';
 
+        // countOnlyQuantity: 只统计数量，不统计金额（所有金额归零）
+        const effectiveUnitPrice = isCountOnlyQuantity ? 0 : unitPrice;
+        const effectivePlatformDiscount = isCountOnlyQuantity ? 0 : platformDiscount;
+        const effectiveCommission = isCountOnlyQuantity ? 0 : commission;
+        const effectivePlatformFee = isCountOnlyQuantity ? 0 : platformFee;
+        const effectiveShippingFee = isCountOnlyQuantity ? 0 : shippingFee;
+
         const formulaContext: Record<string, number> = {
           quantity,
-          unitPrice,
-          platformDiscount,
-          platformFee,
-          shippingFee,
-          commission,
-          purchasePrice,
+          unitPrice: effectiveUnitPrice,
+          platformDiscount: effectivePlatformDiscount,
+          platformFee: effectivePlatformFee,
+          shippingFee: effectiveShippingFee,
+          commission: effectiveCommission,
+          purchasePrice: isCountOnlyQuantity ? 0 : purchasePrice,
         };
 
         const computedTotalAmount = evalFormula(config.formulas.totalAmount, formulaContext);
@@ -864,7 +868,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
         const profitRate = evalFormula(config.formulas.profitRate, formulaContext);
 
-        const purchaseCost = purchasePrice * quantity;
+        const purchaseCost = isCountOnlyQuantity ? 0 : purchasePrice * quantity;
 
         calculatedOrders.push({
           id: generateId(),
@@ -874,14 +878,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
           shopName: orderShopName,
           orderDate,
           quantity,
-          unitPrice,
-          platformDiscount,
+          unitPrice: effectiveUnitPrice,
+          platformDiscount: effectivePlatformDiscount,
           totalAmount: computedTotalAmount,
-          platformFee,
-          shippingFee,
-          commission,
+          platformFee: effectivePlatformFee,
+          shippingFee: effectiveShippingFee,
+          commission: effectiveCommission,
           netAmount,
-          purchasePrice,
+          purchasePrice: isCountOnlyQuantity ? 0 : purchasePrice,
           purchaseCost,
           profit,
           profitRate,
