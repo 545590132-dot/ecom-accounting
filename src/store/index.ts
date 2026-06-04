@@ -840,18 +840,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const orderShopName = orderFile.shopName || '';
         const orderDate = orderFile.yearMonth || '';
 
-        // countOnlyQuantity: 只统计数量，不统计商品金额（仍统计各项服务费）
-        // 归零的：unitPrice（商品金额）
-        // 保留的：commission（平台服务费）、platformFee（交易手续费）、shippingFee（平台佣金）、platformDiscount（运费）
+        // countOnlyQuantity（只统计数量不统计金额的订单）:
+        // Shopee: 归零商品金额(unitPrice)，保留各项服务费(commission/platformFee/shippingFee/platformDiscount)
+        // TikTok/Lazada: 所有金额归零
+        // 所有平台: 数量和采购成本正常计入
         const effectiveUnitPrice = isCountOnlyQuantity ? 0 : unitPrice;
+        const effectiveCommission = isCountOnlyQuantity && platform !== 'shopee' ? 0 : commission;
+        const effectivePlatformFee = isCountOnlyQuantity && platform !== 'shopee' ? 0 : platformFee;
+        const effectiveShippingFee = isCountOnlyQuantity && platform !== 'shopee' ? 0 : shippingFee;
+        const effectivePlatformDiscount = isCountOnlyQuantity && platform !== 'shopee' ? 0 : platformDiscount;
 
         const formulaContext: Record<string, number> = {
           quantity,
           unitPrice: effectiveUnitPrice,
-          platformDiscount,
-          platformFee,
-          shippingFee,
-          commission,
+          platformDiscount: effectivePlatformDiscount,
+          platformFee: effectivePlatformFee,
+          shippingFee: effectiveShippingFee,
+          commission: effectiveCommission,
           purchasePrice,
         };
 
@@ -877,11 +882,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
           orderDate,
           quantity,
           unitPrice: effectiveUnitPrice,
-          platformDiscount,
+          platformDiscount: effectivePlatformDiscount,
           totalAmount: computedTotalAmount,
-          platformFee,
-          shippingFee,
-          commission,
+          platformFee: effectivePlatformFee,
+          shippingFee: effectiveShippingFee,
+          commission: effectiveCommission,
           netAmount,
           purchasePrice,
           purchaseCost,
