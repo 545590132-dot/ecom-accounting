@@ -311,11 +311,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         availableHeaders[p] = Array.from(headersSet).filter(Boolean);
       }
 
-      // 等待连接测试结果
-      anySuccess = await connectionPromise;
+      // 等待连接测试结果（仅更新 dbConnected 状态，不影响 anySuccess 判断）
+      const connectionOk = await connectionPromise;
+      const finalAnySuccess = anySuccess || connectionOk;
 
       // 如果 Supabase 全部失败，从 localStorage 恢复
-      if (!anySuccess) {
+      if (!finalAnySuccess) {
         console.warn('Supabase 全部失败，从 localStorage 恢复数据');
         const localData = dbOps.loadAllFromLocalStorage();
         if (localData) {
@@ -346,10 +347,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
         activeConfigId,
         rawOrders,
         availableHeaders,
-        dbConnected: anySuccess,
+        dbConnected: finalAnySuccess,
       });
       // 加载成功后保存一份快照到 localStorage
-      if (anySuccess) {
+      if (finalAnySuccess) {
         try { persistSnapshot(); } catch { /* ignore */ }
       }
     } catch (error) {

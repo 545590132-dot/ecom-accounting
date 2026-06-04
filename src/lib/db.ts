@@ -393,6 +393,27 @@ export async function getOrderFiles(platform: Platform): Promise<RawOrderData[]>
       rowsByFile[fileId].push(rowData);
     }
 
+    // 去重：移除同一文件中完全相同的重复行（保留首次出现）
+    for (const fid of Object.keys(rowsByFile)) {
+      const rows = rowsByFile[fid];
+      const seen = new Set<string>();
+      const deduped: Record<string, string | number>[] = [];
+      let dupeCount = 0;
+      for (const r of rows) {
+        const key = JSON.stringify(r);
+        if (seen.has(key)) {
+          dupeCount++;
+        } else {
+          seen.add(key);
+          deduped.push(r);
+        }
+      }
+      if (dupeCount > 0) {
+        console.warn(`文件 ${fid} 发现 ${dupeCount} 条重复行，已自动去重`);
+        rowsByFile[fid] = deduped;
+      }
+    }
+
     return files.map((f: Record<string, unknown>) => ({
       id: f.id as string,
       platform: f.platform as Platform,
@@ -425,7 +446,18 @@ export async function insertOrderFile(
     if (fileError) { console.error('insertOrderFile error:', fileError); return null; }
 
     const batchSize = 100;
-    const allRows = rows.map((row, index) => ({
+    // 上传前去重：移除完全相同的行
+    const seenRows = new Set<string>();
+    const uniqueRows = rows.filter((row) => {
+      const key = JSON.stringify(row);
+      if (seenRows.has(key)) return false;
+      seenRows.add(key);
+      return true;
+    });
+    if (uniqueRows.length < rows.length) {
+      console.warn(`上传去重：移除 ${rows.length - uniqueRows.length} 条重复行`);
+    }
+    const allRows = uniqueRows.map((row, index) => ({
       file_id: fileMeta.id,
       row_index: index,
       row_data: row,
