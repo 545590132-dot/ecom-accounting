@@ -5,7 +5,7 @@ import { join } from 'path';
 const isProd = process.env.NODE_ENV === 'production';
 
 const nextConfig: NextConfig = {
-  ...(isProd ? { output: 'export' as const, basePath: '/ecommerce-accounting' } : {}),
+  ...(isProd ? { output: 'export' as const, basePath: '/ecom-accounting' } : {}),
   images: {
     unoptimized: true,
   },

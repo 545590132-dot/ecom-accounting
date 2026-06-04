@@ -81,8 +81,8 @@ src/
 
 ## GitHub Pages 部署
 
-- 仓库：`545590132-dot/ecommerce-accounting`
-- 访问地址：`https://545590132-dot.github.io/ecommerce-accounting/`
+- 仓库：`545590132-dot/ecom-accounting`
+- 访问地址：`https://545590132-dot.github.io/ecom-accounting/`
 - `main` 分支：源代码
 - `gh-pages` 分支：静态构建产物 (out/ 目录内容)
-- `next.config.ts`：开发环境无 basePath，生产环境 basePath=/ecommerce-accounting
+- `next.config.ts`：开发环境无 basePath，生产环境 basePath=/ecom-accounting
