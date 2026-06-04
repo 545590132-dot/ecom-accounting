@@ -796,7 +796,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const shippingFee = getNumValue(mapping.shippingFee);
         const commission = getNumValue(mapping.commission);
         const rawQuantity = getNumValue(mapping.quantity);
-        let quantity = config.countQuantityAsRows ? 1 : rawQuantity;
+        const quantity = config.countQuantityAsRows ? 1 : rawQuantity;
         const unitPrice = getNumValue(mapping.unitPrice);
         const platformDiscount = getNumValue(mapping.platformDiscount);
 
@@ -822,18 +822,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }
         }
 
-        let countOnlyQuantity = false;
         if (filterRules.quantityOnlyStatusField && filterRules.quantityOnlyStatusValues.length > 0) {
           const rawValue = getStrValue(filterRules.quantityOnlyStatusField).trim();
           const shouldCountOnly = filterRules.quantityOnlyStatusValues.some(
             (v) => v.trim().toLowerCase() === rawValue.toLowerCase()
           );
           if (shouldCountOnly) {
-            countOnlyQuantity = true;
-            // 退货行：独立退货订单行，从总数量中减去退回数量
-            // （Shopee/TikTok 退货行与正常订单行不重叠，退回数量应从总计中扣除）
-            const returnedQty = getNumValue(filterRules.quantityOnlyStatusField);
-            quantity = -returnedQty;
+            // 退货行：独立退货订单行，与正常订单行不重叠（Order ID 无交集）
+            // 这些退货行不应计入统计——它们不产生销售，也不是新订单
+            // 直接跳过，不计入 totalQuantity、totalOrders 等任何汇总
+            excludedCount++;
+            continue;
           }
         }
 
@@ -846,12 +845,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
         const formulaContext: Record<string, number> = {
           quantity,
-          unitPrice: countOnlyQuantity ? 0 : unitPrice,
-          platformDiscount: countOnlyQuantity && platform === 'tiktok' ? 0 : platformDiscount,
-          platformFee: countOnlyQuantity && platform === 'tiktok' ? 0 : platformFee,
-          shippingFee: countOnlyQuantity && platform === 'tiktok' ? 0 : shippingFee,
-          commission: countOnlyQuantity && platform === 'tiktok' ? 0 : commission,
-          purchasePrice: countOnlyQuantity ? 0 : purchasePrice,
+          unitPrice,
+          platformDiscount,
+          platformFee,
+          shippingFee,
+          commission,
+          purchasePrice,
         };
 
         const computedTotalAmount = evalFormula(config.formulas.totalAmount, formulaContext);
@@ -865,7 +864,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
         const profitRate = evalFormula(config.formulas.profitRate, formulaContext);
 
-        const purchaseCost = countOnlyQuantity ? 0 : purchasePrice * quantity;
+        const purchaseCost = purchasePrice * quantity;
 
         calculatedOrders.push({
           id: generateId(),
