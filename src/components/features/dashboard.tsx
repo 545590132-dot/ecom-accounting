@@ -3,13 +3,17 @@
 import React from 'react';
 import { useAppStore } from '@/store';
 import { formatCurrency, PLATFORM_CONFIG } from '@/types';
-import type { Platform, PlatformSummary } from '@/types';
+import type { Platform, PlatformSummary, CalculatedOrder } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import {
   ShoppingCart, Package, TrendingUp, TrendingDown,
-  BarChart3,
+  BarChart3, Calendar,
 } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 function YuanIcon({ className }: { className?: string }) {
   return (
@@ -116,36 +120,240 @@ function PlatformOverviewCard({
   );
 }
 
+// 从订单列表中提取所有年份和月份
+function extractYearMonths(orders: CalculatedOrder[]): { years: string[]; months: string[] } {
+  const yearSet = new Set<string>();
+  const monthSet = new Set<string>();
+  for (const o of orders) {
+    if (o.orderDate) {
+      const parts = o.orderDate.split('-');
+      if (parts.length >= 1) yearSet.add(parts[0]);
+      if (parts.length >= 2) monthSet.add(o.orderDate);
+    }
+  }
+  const years = Array.from(yearSet).sort();
+  const months = Array.from(monthSet).sort();
+  return { years, months };
+}
+
+// 按日期筛选订单
+function filterOrdersByDate(orders: CalculatedOrder[], yearFilter: string, monthFilter: string): CalculatedOrder[] {
+  return orders.filter((o) => {
+    if (!o.orderDate) return false;
+    if (yearFilter && !o.orderDate.startsWith(yearFilter)) return false;
+    if (monthFilter && o.orderDate !== monthFilter) return false;
+    return true;
+  });
+}
+
+// 从筛选后的订单计算平台汇总
+function computeSummaryFromOrders(orders: CalculatedOrder[], platform: Platform): PlatformSummary {
+  const totalSales = orders.reduce((s, o) => s + o.totalAmount, 0);
+  const totalOrders = new Set(orders.map((o) => o.orderNo)).size;
+  const totalQuantity = orders.reduce((s, o) => s + o.quantity, 0);
+  const totalPlatformFee = orders.reduce((s, o) => s + o.platformFee, 0);
+  const totalNetAmount = orders.reduce((s, o) => s + o.netAmount, 0);
+  const totalPurchaseCost = orders.reduce((s, o) => s + o.purchaseCost, 0);
+  const totalProfit = totalSales - totalPurchaseCost;
+  const totalProfitRate = totalSales > 0 ? (totalProfit / totalSales) * 100 : 0;
+
+  return {
+    platform,
+    totalSales,
+    totalOrders,
+    totalQuantity,
+    totalPlatformFee,
+    totalNetAmount,
+    totalPurchaseCost,
+    totalProfit,
+    totalProfitRate,
+    excludedCount: 0,
+    orders,
+  };
+}
+
+// 生成月度各平台销售额柱状图数据
+function buildMonthlyChartData(
+  allOrders: Record<Platform, CalculatedOrder[]>,
+  yearFilter: string
+): { month: string; Shopee: number; Lazada: number; TikTok: number }[] {
+  const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
+  const platformNames: Record<Platform, string> = { shopee: 'Shopee', lazada: 'Lazada', tiktok: 'TikTok' };
+
+  // 收集该年份下的所有月份
+  const monthSet = new Set<string>();
+  for (const p of platforms) {
+    for (const o of allOrders[p]) {
+      if (o.orderDate && (!yearFilter || o.orderDate.startsWith(yearFilter))) {
+        monthSet.add(o.orderDate);
+      }
+    }
+  }
+  const sortedMonths = Array.from(monthSet).sort();
+
+  return sortedMonths.map((month) => {
+    const entry: Record<string, string | number> = {
+      month,
+      Shopee: 0,
+      Lazada: 0,
+      TikTok: 0,
+    };
+    for (const p of platforms) {
+      const name = platformNames[p];
+      for (const o of allOrders[p]) {
+        if (o.orderDate === month) {
+          entry[name] = (entry[name] as number) + o.totalAmount;
+        }
+      }
+    }
+    // 保留两位小数
+    entry.Shopee = Math.round((entry.Shopee as number) * 100) / 100;
+    entry.Lazada = Math.round((entry.Lazada as number) * 100) / 100;
+    entry.TikTok = Math.round((entry.TikTok as number) * 100) / 100;
+    return entry as { month: string; Shopee: number; Lazada: number; TikTok: number };
+  });
+}
+
+// 自定义 Tooltip
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-sm">
+      <div className="font-semibold mb-1 text-slate-700">{label}</div>
+      {payload.map((item) => (
+        <div key={item.name} className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: item.color }} />
+          <span className="text-slate-600">{item.name}:</span>
+          <span className="font-mono font-medium">{formatCurrency(item.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function DashboardOverview() {
   const skuMappings = useAppStore((s) => s.skuMappings);
   const rawOrders = useAppStore((s) => s.rawOrders);
   const savedConfigs = useAppStore((s) => s.savedConfigs);
   const activeConfigId = useAppStore((s) => s.activeConfigId);
   const calculateAllSummaries = useAppStore((s) => s.calculateAllSummaries);
-  
-  // 只在有订单数据变化时才重新计算
+
   const summaries = React.useMemo(() => calculateAllSummaries(), [rawOrders, savedConfigs, activeConfigId, skuMappings]);
   const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
 
-  const totalSales = platforms.reduce((s, p) => s + summaries[p].totalSales, 0);
-  const totalOrders = platforms.reduce((s, p) => s + summaries[p].totalOrders, 0);
-  const totalQuantity = platforms.reduce((s, p) => s + summaries[p].totalQuantity, 0);
-  const totalProfit = platforms.reduce((s, p) => s + summaries[p].totalProfit, 0);
+  // 收集所有订单
+  const allOrders = React.useMemo(() => {
+    const result: Record<Platform, CalculatedOrder[]> = {
+      shopee: [],
+      lazada: [],
+      tiktok: [],
+    };
+    for (const p of platforms) {
+      result[p] = summaries[p].orders;
+    }
+    return result;
+  }, [summaries]);
+
+  const allOrdersFlat = React.useMemo(
+    () => platforms.flatMap((p) => allOrders[p]),
+    [allOrders]
+  );
+
+  // 提取年份和月份
+  const { years, months } = React.useMemo(() => extractYearMonths(allOrdersFlat), [allOrdersFlat]);
+
+  // 筛选状态
+  const [yearFilter, setYearFilter] = React.useState<string>('');
+  const [monthFilter, setMonthFilter] = React.useState<string>('');
+
+  // 年份变化时重置月份
+  const handleYearChange = (year: string) => {
+    setYearFilter(year);
+    setMonthFilter('');
+  };
+
+  // 根据年份筛选可选月份
+  const availableMonths = React.useMemo(() => {
+    if (!yearFilter) return months;
+    return months.filter((m) => m.startsWith(yearFilter));
+  }, [months, yearFilter]);
+
+  // 筛选后的各平台订单
+  const filteredOrders = React.useMemo(() => {
+    const result: Record<Platform, CalculatedOrder[]> = { shopee: [], lazada: [], tiktok: [] };
+    for (const p of platforms) {
+      result[p] = filterOrdersByDate(allOrders[p], yearFilter, monthFilter);
+    }
+    return result;
+  }, [allOrders, yearFilter, monthFilter]);
+
+  // 筛选后的各平台汇总
+  const filteredSummaries = React.useMemo(() => {
+    const result: Record<Platform, PlatformSummary> = { shopee: {} as PlatformSummary, lazada: {} as PlatformSummary, tiktok: {} as PlatformSummary };
+    for (const p of platforms) {
+      result[p] = computeSummaryFromOrders(filteredOrders[p], p);
+    }
+    return result;
+  }, [filteredOrders]);
+
+  // 全局汇总
+  const totalSales = platforms.reduce((s, p) => s + filteredSummaries[p].totalSales, 0);
+  const totalOrders = platforms.reduce((s, p) => s + filteredSummaries[p].totalOrders, 0);
+  const totalQuantity = platforms.reduce((s, p) => s + filteredSummaries[p].totalQuantity, 0);
+  const totalProfit = platforms.reduce((s, p) => s + filteredSummaries[p].totalProfit, 0);
   const totalProfitRate = totalSales > 0 ? totalProfit / totalSales * 100 : 0;
-  const totalPlatformFee = platforms.reduce((s, p) => s + summaries[p].totalPlatformFee, 0);
-  const totalNetAmount = platforms.reduce((s, p) => s + summaries[p].totalNetAmount, 0);
-  const hasAnyData = platforms.some((p) => summaries[p].orders.length > 0);
+  const totalNetAmount = platforms.reduce((s, p) => s + filteredSummaries[p].totalNetAmount, 0);
+  const hasAnyData = allOrdersFlat.length > 0;
+
+  // 柱状图数据（按年份展示月度各平台销售额）
+  const chartYear = yearFilter || (years.length > 0 ? years[years.length - 1] : '');
+  const chartData = React.useMemo(
+    () => buildMonthlyChartData(allOrders, chartYear),
+    [allOrders, chartYear]
+  );
 
   return (
     <div className="space-y-8">
       {/* 全局汇总 */}
       <div>
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-          <BarChart3 className="h-5 w-5" />
-          全店总览
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            全店总览
+          </h2>
+          {/* 年份/月份筛选 */}
+          {hasAnyData && (
+            <div className="flex items-center gap-3">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <select
+                value={yearFilter}
+                onChange={(e) => handleYearChange(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">全部年份</option>
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}年</option>
+                ))}
+              </select>
+              <select
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                disabled={!yearFilter}
+              >
+                <option value="">全部月份</option>
+                {availableMonths.map((m) => {
+                  const parts = m.split('-');
+                  return (
+                    <option key={m} value={m}>{parts[1]}月</option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+        </div>
         {hasAnyData ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <StatCard
               title="总销售额"
               value={formatCurrency(totalSales)}
@@ -160,12 +368,6 @@ export function DashboardOverview() {
               title="总商品数量"
               value={String(totalQuantity)}
               icon={Package}
-            />
-            <StatCard
-              title="总手续费"
-              value={formatCurrency(totalPlatformFee)}
-              icon={TrendingDown}
-              color="#ef4444"
             />
             <StatCard
               title="扣费后金额"
@@ -193,12 +395,59 @@ export function DashboardOverview() {
 
       <Separator />
 
+      {/* 月度各平台销售额柱状图 */}
+      {hasAnyData && chartData.length > 0 && (
+        <>
+          <div>
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              {chartYear ? `${chartYear}年` : ''}每月各平台销售额
+            </h2>
+            <Card>
+              <CardContent className="pt-6 pb-4">
+                <ResponsiveContainer width="100%" height={360}>
+                  <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fontSize: 12, fill: '#64748b' }}
+                      tickFormatter={(v: string) => {
+                        const parts = v.split('-');
+                        return parts.length >= 2 ? `${parseInt(parts[1])}月` : v;
+                      }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      tickFormatter={(v: number) => {
+                        if (v >= 10000) return `${(v / 10000).toFixed(1)}万`;
+                        if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+                        return String(v);
+                      }}
+                    />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Legend
+                      verticalAlign="top"
+                      height={36}
+                      formatter={(value: string) => <span className="text-sm text-slate-600">{value}</span>}
+                    />
+                    <Bar dataKey="Shopee" fill="#ee4d2d" radius={[2, 2, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="Lazada" fill="#0f146d" radius={[2, 2, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="TikTok" fill="#fe2c55" radius={[2, 2, 0, 0]} maxBarSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+          <Separator />
+        </>
+      )}
+
       {/* 各平台概览 */}
       <div>
         <h2 className="text-lg font-bold mb-4">各平台概况</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {platforms.map((p) => (
-            <PlatformOverviewCard key={p} platform={p} summary={summaries[p]} />
+            <PlatformOverviewCard key={p} platform={p} summary={filteredSummaries[p]} />
           ))}
         </div>
       </div>
