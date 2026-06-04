@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer,
+  ResponsiveContainer, LabelList,
 } from 'recharts';
 
 function YuanIcon({ className }: { className?: string }) {
@@ -141,7 +141,17 @@ function filterOrdersByDate(orders: CalculatedOrder[], yearFilter: string, month
   return orders.filter((o) => {
     if (!o.orderDate) return false;
     if (yearFilter && !o.orderDate.startsWith(yearFilter)) return false;
-    if (monthFilter && o.orderDate !== monthFilter) return false;
+    if (monthFilter) {
+      // 如果有年份筛选，月份必须完全匹配 (YYYY-MM)
+      // 如果没有年份筛选，只匹配月份部分
+      if (yearFilter) {
+        if (o.orderDate !== monthFilter) return false;
+      } else {
+        const orderMonth = o.orderDate.split('-')[1];
+        const filterMonth = monthFilter.split('-')[1];
+        if (orderMonth !== filterMonth) return false;
+      }
+    }
     return true;
   });
 }
@@ -266,10 +276,12 @@ export function DashboardOverview() {
   const [yearFilter, setYearFilter] = React.useState<string>('');
   const [monthFilter, setMonthFilter] = React.useState<string>('');
 
-  // 年份变化时重置月份
+  // 年份变化时：如果月份不在新年份范围内则重置
   const handleYearChange = (year: string) => {
     setYearFilter(year);
-    setMonthFilter('');
+    if (monthFilter && !monthFilter.startsWith(year)) {
+      setMonthFilter('');
+    }
   };
 
   // 根据年份筛选可选月份
@@ -339,13 +351,12 @@ export function DashboardOverview() {
                 value={monthFilter}
                 onChange={(e) => setMonthFilter(e.target.value)}
                 className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                disabled={!yearFilter}
               >
                 <option value="">全部月份</option>
                 {availableMonths.map((m) => {
                   const parts = m.split('-');
                   return (
-                    <option key={m} value={m}>{parts[1]}月</option>
+                    <option key={m} value={m}>{parts[0]}年{parseInt(parts[1])}月</option>
                   );
                 })}
               </select>
@@ -405,8 +416,8 @@ export function DashboardOverview() {
             </h2>
             <Card>
               <CardContent className="pt-6 pb-4">
-                <ResponsiveContainer width="100%" height={360}>
-                  <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <ResponsiveContainer width="100%" height={400}>
+                  <BarChart data={chartData} margin={{ top: 30, right: 20, left: 10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis
                       dataKey="month"
@@ -430,9 +441,15 @@ export function DashboardOverview() {
                       height={36}
                       formatter={(value: string) => <span className="text-sm text-slate-600">{value}</span>}
                     />
-                    <Bar dataKey="Shopee" fill="#ee4d2d" radius={[2, 2, 0, 0]} maxBarSize={40} />
-                    <Bar dataKey="Lazada" fill="#0f146d" radius={[2, 2, 0, 0]} maxBarSize={40} />
-                    <Bar dataKey="TikTok" fill="#fe2c55" radius={[2, 2, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="Shopee" fill="#ee4d2d" radius={[2, 2, 0, 0]} maxBarSize={40}>
+                      <LabelList dataKey="Shopee" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0)} />
+                    </Bar>
+                    <Bar dataKey="Lazada" fill="#0f146d" radius={[2, 2, 0, 0]} maxBarSize={40}>
+                      <LabelList dataKey="Lazada" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0)} />
+                    </Bar>
+                    <Bar dataKey="TikTok" fill="#fe2c55" radius={[2, 2, 0, 0]} maxBarSize={40}>
+                      <LabelList dataKey="TikTok" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0)} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
