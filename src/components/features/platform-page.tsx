@@ -1024,7 +1024,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
       s.totalSales += order.totalAmount;
       s.totalPlatformFee += order.platformFee;
       s.totalNetAmount += order.netAmount;
-      s.totalPurchaseCost += order.purchasePrice * order.quantity;
+      s.totalPurchaseCost += order.purchaseCost;
       s.totalProfit += order.profit;
       s.orderCount += 1;
     }
@@ -1042,7 +1042,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   const filteredTotalQuantity = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.quantity, 0);
   const filteredTotalPlatformFee = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.platformFee, 0);
   const filteredTotalNetAmount = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.netAmount, 0);
-  const filteredTotalPurchaseCost = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.purchasePrice * o.quantity, 0);
+  const filteredTotalPurchaseCost = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.purchaseCost, 0);
   const filteredTotalProfit = filteredOrders.reduce((s: number, o: CalculatedOrder) => s + o.profit, 0);
   const filteredTotalProfitRate = filteredTotalSales > 0 ? filteredTotalProfit / filteredTotalSales * 100 : 0;
 

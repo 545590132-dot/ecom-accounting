@@ -830,9 +830,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
           );
           if (shouldCountOnly) {
             countOnlyQuantity = true;
-            // 退货行：有效数量 = 原始数量 - 退回数量（避免退货商品虚增总商品数量）
+            // 退货行：独立退货订单行，从总数量中减去退回数量
+            // （Shopee/TikTok 退货行与正常订单行不重叠，退回数量应从总计中扣除）
             const returnedQty = getNumValue(filterRules.quantityOnlyStatusField);
-            quantity = Math.max(0, rawQuantity - returnedQty);
+            quantity = -returnedQty;
           }
         }
 
@@ -895,7 +896,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const totalQuantity = calculatedOrders.reduce((s, o) => s + o.quantity, 0);
     const totalPlatformFee = calculatedOrders.reduce((s, o) => s + o.platformFee, 0);
     const totalNetAmount = calculatedOrders.reduce((s, o) => s + o.netAmount, 0);
-    const totalPurchaseCost = calculatedOrders.reduce((s, o) => s + o.purchasePrice * o.quantity, 0);
+    const totalPurchaseCost = calculatedOrders.reduce((s, o) => s + o.purchaseCost, 0);
     const totalProfit = totalSales - totalPurchaseCost;
     const totalProfitRate = totalSales > 0 ? (totalProfit / totalSales) * 100 : 0;
 
