@@ -840,6 +840,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const skuInfo = skuMap.get(sku);
         const productName = skuInfo?.productName || sku;
         const purchasePrice = skuInfo?.purchasePrice || 0;
+        const productOwner = skuInfo?.productOwner || '';
 
         // excludeZeroAmount：排除零金额行
         // 注意：countOnlyQuantity 行的金额会被归零，但这些行应该被保留（计入数量）
@@ -892,6 +893,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           orderNo: getStrValue(mapping.orderNo),
           sku,
           productName,
+          productOwner,
           shopName: orderShopName,
           orderDate,
           quantity,
@@ -960,6 +962,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         skuMap.set(key, {
           sku: order.sku,
           productName: displayName,
+          productOwner: order.productOwner || '',
           shopName: order.shopName || '-',
           purchasePrice: order.purchasePrice,
           totalQuantity: 0,

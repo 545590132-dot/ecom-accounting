@@ -126,6 +126,8 @@ export async function getSkuMappings(platform: Platform): Promise<SkuMapping[]> 
         productName: row.product_name as string,
         purchasePrice: Number(row.purchase_price),
         platform: row.platform as Platform,
+        category: (row.category as string) || undefined,
+        productOwner: (row.product_owner as string) || undefined,
       })
     );
   }, [], 'getSkuMappings');
@@ -139,6 +141,8 @@ export async function upsertSkuMapping(mapping: SkuMapping): Promise<boolean> {
       product_name: mapping.productName,
       purchase_price: mapping.purchasePrice,
       platform: mapping.platform,
+      category: mapping.category || null,
+      product_owner: mapping.productOwner || null,
     });
     if (error) { console.error('upsertSkuMapping error:', error); return false; }
     return true;
@@ -188,6 +192,8 @@ export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<bo
       product_name: m.productName,
       purchase_price: m.purchasePrice,
       platform: m.platform,
+      category: m.category || null,
+      product_owner: m.productOwner || null,
     }));
     // 分批并行 upsert，每批 500
     const batches: typeof rows[] = [];

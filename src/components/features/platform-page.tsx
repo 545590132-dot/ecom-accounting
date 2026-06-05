@@ -998,7 +998,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   const platformConfig = PLATFORM_CONFIG[platform];
   const [viewMode, setViewMode] = useState<'orders' | 'sku'>('sku');
   const [filterShops, setFilterShops] = useState<string[]>([]); // 多选店铺，空数组=全部
-  const [filterYearMonth, setFilterYearMonth] = useState<string>('__all__');
+  const [filterYearMonths, setFilterYearMonths] = useState<string[]>([]); // 多选年月，空数组=全部
   const [showDebug, setShowDebug] = useState(false);
 
   // 获取该平台下的店铺名称列表
@@ -1012,7 +1012,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   // 筛选订单
   const filteredOrders = summary.orders.filter((o) => {
     if (filterShops.length > 0 && !filterShops.includes(o.shopName)) return false;
-    if (filterYearMonth !== '__all__' && o.orderDate !== filterYearMonth) return false;
+    if (filterYearMonths.length > 0 && !filterYearMonths.includes(o.orderDate)) return false;
     return true;
   });
 
@@ -1030,6 +1030,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
         map.set(groupKey, {
           sku: order.sku,
           productName: order.productName,
+          productOwner: order.productOwner || '',
           shopName: isAllShops ? '-' : (order.shopName || '-'),
           purchasePrice: order.purchasePrice,
           totalQuantity: 0,
@@ -1083,7 +1084,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   }
 
   // 筛选条件是否生效
-  const isFiltering = filterShops.length > 0 || filterYearMonth !== '__all__';
+  const isFiltering = filterShops.length > 0 || filterYearMonths.length > 0;
 
   return (
     <div className="space-y-6">
@@ -1182,27 +1183,77 @@ function PlatformStats({ platform }: { platform: Platform }) {
                 </Button>
               )}
             </div>
-            {/* 年月筛选 */}
+            {/* 年月筛选 - 多选 */}
             <div className="flex items-center gap-2">
               <label className="text-sm text-muted-foreground shrink-0">年月</label>
-              <Select value={filterYearMonth} onValueChange={setFilterYearMonth}>
-                <SelectTrigger className="h-8 w-[140px]">
-                  <SelectValue placeholder="全部时间" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">全部时间</SelectItem>
-                  {availableYearMonths.map((ym) => (
-                    <SelectItem key={ym} value={ym}>{ym}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 w-auto min-w-[140px] justify-between font-normal">
+                    {filterYearMonths.length === 0
+                      ? '全部时间'
+                      : filterYearMonths.length === 1
+                        ? filterYearMonths[0]
+                        : `已选 ${filterYearMonths.length} 个月份`}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[220px] p-0" align="start">
+                  <Command>
+                    <CommandList>
+                      <CommandEmpty>无匹配月份</CommandEmpty>
+                      <CommandGroup>
+                        {/* 全选/取消全选 */}
+                        <CommandItem
+                          onSelect={() => setFilterYearMonths([])}
+                          className="cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={filterYearMonths.length === 0}
+                            className="mr-2"
+                          />
+                          <span className="font-medium">全部时间</span>
+                        </CommandItem>
+                        {availableYearMonths.map((ym) => (
+                          <CommandItem
+                            key={ym}
+                            onSelect={() => {
+                              setFilterYearMonths((prev) =>
+                                prev.includes(ym)
+                                  ? prev.filter((v) => v !== ym)
+                                  : [...prev, ym]
+                              );
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={filterYearMonths.includes(ym)}
+                              className="mr-2"
+                            />
+                            {ym}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {filterYearMonths.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs text-muted-foreground"
+                  onClick={() => setFilterYearMonths([])}
+                >
+                  清除
+                </Button>
+              )}
             </div>
             {/* 重置 */}
             {isFiltering && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setFilterShops([]); setFilterYearMonth('__all__'); }}
+                onClick={() => { setFilterShops([]); setFilterYearMonths([]); }}
               >
                 重置筛选
               </Button>
@@ -1393,6 +1444,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
             const data = viewMode === 'sku'
               ? filteredSkuSummaries.map((s: SkuSummary) => ({
                   商品名称: s.productName,
+                  产品负责人: s.productOwner || '-',
                   店铺名称: s.shopName,
                   销量: s.totalQuantity,
                   总价: s.totalSales,
@@ -1406,6 +1458,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
                   订单号: o.orderNo,
                   SKU: o.sku,
                   商品名称: o.productName,
+                  产品负责人: o.productOwner || '-',
                   店铺名称: o.shopName || '-',
                   日期: o.orderDate || '-',
                   数量: o.quantity,
@@ -1475,6 +1528,7 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn }: 
             <TableHeader>
               <TableRow>
                 <TableHead>商品名称</TableHead>
+                <TableHead className="w-[100px]">产品负责人</TableHead>
                 {showShopColumn && <TableHead className="w-[100px]">店铺名称</TableHead>}
                 <TableHead className={`w-[80px] text-right ${sortableCls}`} onClick={() => handleSort('totalQuantity')}>
                   销量<SortIcon field="totalQuantity" sortField={currentSortField} sortDirection={sortDirection} />
@@ -1497,6 +1551,7 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn }: 
               {sortedSummaries.map((s) => (
                 <TableRow key={`${s.productName}-${s.shopName}`}>
                   <TableCell className="font-medium">{s.productName || '-'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{s.productOwner || '-'}</TableCell>
                   {showShopColumn && <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>}
                   <TableCell className="text-right font-mono">{s.totalQuantity}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.totalSales)}</TableCell>
@@ -1531,6 +1586,7 @@ function OrderDetailTable({ orders, profitRateRedThreshold }: { orders: Calculat
                 <TableHead className="w-[140px]">订单号</TableHead>
                 <TableHead className="w-[120px]">SKU</TableHead>
                 <TableHead>商品名称</TableHead>
+                <TableHead className="w-[100px]">产品负责人</TableHead>
                 <TableHead className="w-[100px]">店铺名称</TableHead>
                 <TableHead className="w-[80px]">日期</TableHead>
                 <TableHead className="w-[60px] text-right">数量</TableHead>
@@ -1552,6 +1608,7 @@ function OrderDetailTable({ orders, profitRateRedThreshold }: { orders: Calculat
                   <TableCell className="font-mono text-xs">{order.orderNo}</TableCell>
                   <TableCell className="font-mono text-sm">{order.sku}</TableCell>
                   <TableCell className="max-w-[200px] truncate">{order.productName || '-'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{order.productOwner || '-'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{order.shopName || '-'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{order.orderDate || '-'}</TableCell>
                   <TableCell className="text-right font-mono">{order.quantity}</TableCell>

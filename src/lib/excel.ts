@@ -67,12 +67,14 @@ export function downloadSkuTemplate(): void {
       商品名称: '示例商品A',
       采购单价: 10.5,
       分类: '电子产品',
+      产品负责人: '张三',
     },
     {
       SKU编码: 'SKU-002',
       商品名称: '示例商品B',
       采购单价: 25.0,
       分类: '家居用品',
+      产品负责人: '李四',
     },
   ];
   exportToExcel(templateData, 'SKU映射模板', 'SKU映射');
@@ -87,6 +89,7 @@ export function importSkuFromExcel(
     productName: String(row['商品名称'] ?? row['productName'] ?? ''),
     purchasePrice: Number(row['采购单价'] ?? row['purchasePrice'] ?? 0),
     category: String(row['分类'] ?? row['category'] ?? ''),
+    productOwner: String(row['产品负责人'] ?? row['productOwner'] ?? ''),
   })).filter((m) => m.sku !== '');
 }
 

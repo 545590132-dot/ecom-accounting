@@ -17,6 +17,7 @@ export interface SkuMapping {
   purchasePrice: number; // 采购单价
   platform: Platform; // 所属平台
   category?: string; // 商品分类（可选）
+  productOwner?: string; // 产品负责人（可选）
 }
 
 // 计算公式字段映射
@@ -93,6 +94,7 @@ export interface CalculatedOrder {
   orderNo: string;
   sku: string;
   productName: string;
+  productOwner: string; // 产品负责人（来自 SKU 映射）
   shopName: string; // 店铺名称
   orderDate: string; // 订单日期（年-月格式，如 2025-01）
   quantity: number;
@@ -129,6 +131,7 @@ export interface PlatformSummary {
 export interface SkuSummary {
   sku: string;
   productName: string;
+  productOwner: string; // 产品负责人（来自 SKU 映射）
   shopName: string; // 店铺名称（用于分组）
   purchasePrice: number; // 采购单价（来自 SKU 映射）
   totalQuantity: number; // 销量

@@ -30,7 +30,7 @@ export function SkuManager() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>('shopee');
   const [currentPage, setCurrentPage] = useState(1);
-  const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '' });
+  const [newSku, setNewSku] = useState({ sku: '', productName: '', purchasePrice: 0, category: '', productOwner: '' });
   const [clearing, setClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [perfMs, setPerfMs] = useState<number | null>(null);
@@ -86,7 +86,7 @@ export function SkuManager() {
   const handleAdd = () => {
     if (!newSku.sku || !newSku.productName) return;
     addSkuMapping({ ...newSku, platform: selectedPlatform });
-    setNewSku({ sku: '', productName: '', purchasePrice: 0, category: '' });
+    setNewSku({ sku: '', productName: '', purchasePrice: 0, category: '', productOwner: '' });
     setDialogOpen(false);
   };
 
@@ -219,6 +219,14 @@ export function SkuManager() {
                     onChange={(e) => setNewSku({ ...newSku, category: e.target.value })}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>产品负责人（可选）</Label>
+                  <Input
+                    placeholder="例如: 张三"
+                    value={newSku.productOwner}
+                    onChange={(e) => setNewSku({ ...newSku, productOwner: e.target.value })}
+                  />
+                </div>
                 <Button onClick={handleAdd} className="w-full" disabled={!newSku.sku || !newSku.productName}>
                   确认添加
                 </Button>
@@ -235,7 +243,7 @@ export function SkuManager() {
             <Package className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
             <div className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">导入格式参考：</span>
-              表格需包含列头「SKU编码」「商品名称」「采购单价」「分类（可选）」，
+              表格需包含列头「SKU编码」「商品名称」「采购单价」「分类（可选）」「产品负责人（可选）」，
               可点击「下载模板」获取标准格式文件。导入时将自动匹配列头。
             </div>
           </div>
@@ -300,6 +308,7 @@ export function SkuManager() {
                     <TableHead>商品名称</TableHead>
                     <TableHead className="w-[120px] text-right">采购单价</TableHead>
                     <TableHead className="w-[120px]">分类</TableHead>
+                    <TableHead className="w-[120px]">产品负责人</TableHead>
                     <TableHead className="w-[100px] text-center">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -338,6 +347,13 @@ export function SkuManager() {
                               className="h-8"
                             />
                           </TableCell>
+                          <TableCell>
+                            <Input
+                              value={editForm.productOwner ?? ''}
+                              onChange={(e) => setEditForm({ ...editForm, productOwner: e.target.value })}
+                              className="h-8"
+                            />
+                          </TableCell>
                           <TableCell className="text-center">
                             <div className="flex justify-center gap-1">
                               <Button size="sm" variant="ghost" className="h-7 px-2" onClick={saveEdit}>保存</Button>
@@ -358,6 +374,9 @@ export function SkuManager() {
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {mapping.productOwner || <span className="text-muted-foreground">-</span>}
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex justify-center gap-1">
