@@ -999,6 +999,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   const [viewMode, setViewMode] = useState<'orders' | 'sku'>('sku');
   const [filterShops, setFilterShops] = useState<string[]>([]); // 多选店铺，空数组=全部
   const [filterYearMonths, setFilterYearMonths] = useState<string[]>([]); // 多选年月，空数组=全部
+  const [filterProductOwners, setFilterProductOwners] = useState<string[]>([]); // 多选产品负责人，空数组=全部
   const [showDebug, setShowDebug] = useState(false);
 
   // 获取该平台下的店铺名称列表
@@ -1009,10 +1010,16 @@ function PlatformStats({ platform }: { platform: Platform }) {
     new Set(summary.orders.map((o) => o.orderDate).filter(Boolean))
   ).sort().reverse();
 
+  // 从订单数据中提取可用的产品负责人选项
+  const availableProductOwners = Array.from(
+    new Set(summary.orders.map((o) => o.productOwner).filter(Boolean))
+  ).sort();
+
   // 筛选订单
   const filteredOrders = summary.orders.filter((o) => {
     if (filterShops.length > 0 && !filterShops.includes(o.shopName)) return false;
     if (filterYearMonths.length > 0 && !filterYearMonths.includes(o.orderDate)) return false;
+    if (filterProductOwners.length > 0 && !filterProductOwners.includes(o.productOwner || '')) return false;
     return true;
   });
 
@@ -1084,7 +1091,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
   }
 
   // 筛选条件是否生效
-  const isFiltering = filterShops.length > 0 || filterYearMonths.length > 0;
+  const isFiltering = filterShops.length > 0 || filterYearMonths.length > 0 || filterProductOwners.length > 0;
 
   return (
     <div className="space-y-6">
@@ -1248,12 +1255,79 @@ function PlatformStats({ platform }: { platform: Platform }) {
                 </Button>
               )}
             </div>
+            {/* 产品负责人筛选 - 多选 */}
+            {availableProductOwners.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-muted-foreground shrink-0">产品负责人</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 w-auto min-w-[140px] justify-between font-normal">
+                      {filterProductOwners.length === 0
+                        ? '全部'
+                        : filterProductOwners.length === 1
+                          ? filterProductOwners[0]
+                          : `已选 ${filterProductOwners.length} 人`}
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[220px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="搜索负责人..." />
+                      <CommandList>
+                        <CommandEmpty>未找到</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            onSelect={() => setFilterProductOwners([])}
+                            className="cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={filterProductOwners.length === 0}
+                              className="mr-2"
+                            />
+                            <span className="font-medium">全部</span>
+                          </CommandItem>
+                          {availableProductOwners.map((owner) => (
+                            <CommandItem
+                              key={owner}
+                              onSelect={() => {
+                                setFilterProductOwners((prev) =>
+                                  prev.includes(owner)
+                                    ? prev.filter((v) => v !== owner)
+                                    : [...prev, owner]
+                                );
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Checkbox
+                                checked={filterProductOwners.includes(owner)}
+                                className="mr-2"
+                              />
+                              {owner}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {filterProductOwners.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs text-muted-foreground"
+                    onClick={() => setFilterProductOwners([])}
+                  >
+                    清除
+                  </Button>
+                )}
+              </div>
+            )}
             {/* 重置 */}
             {isFiltering && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setFilterShops([]); setFilterYearMonths([]); }}
+                onClick={() => { setFilterShops([]); setFilterYearMonths([]); setFilterProductOwners([]); }}
               >
                 重置筛选
               </Button>
