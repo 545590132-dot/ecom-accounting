@@ -144,6 +144,7 @@ export async function upsertSkuMapping(mapping: SkuMapping): Promise<boolean> {
       product_name: mapping.productName,
       purchase_price: mapping.purchasePrice,
       platform: mapping.platform,
+      category: mapping.category || '',
       product_owner: mapping.productOwner || '',
     });
     if (error) { console.error('upsertSkuMapping error:', error); return false; }
@@ -194,6 +195,7 @@ export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<bo
       product_name: m.productName,
       purchase_price: m.purchasePrice,
       platform: m.platform,
+      category: m.category || '',
       product_owner: m.productOwner || '',
     }));
     // 分批并行 upsert，每批 500
