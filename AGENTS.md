@@ -12,7 +12,7 @@
 - **UI 组件**: shadcn/ui (基于 Radix UI)
 - **Styling**: Tailwind CSS 4
 - **状态管理**: Zustand (内存状态，无 persist)
-- **数据库**: Supabase PostgreSQL (云端共享)
+- **数据库**: Supabase PostgreSQL (Coze 托管实例，通过环境变量连接)
 - **表格解析**: xlsx + file-saver
 - **部署**: GitHub Pages (gh-pages 分支)
 
@@ -86,3 +86,13 @@ src/
 - `main` 分支：源代码
 - `gh-pages` 分支：静态构建产物 (out/ 目录内容)
 - `next.config.ts`：开发环境无 basePath，生产环境 basePath=/ecom-accounting
+
+## Supabase 数据库配置
+
+- 连接信息通过环境变量注入（不再硬编码）：
+  - `NEXT_PUBLIC_SUPABASE_URL`：Supabase 项目 URL
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`：Supabase 匿名密钥
+- 开发环境：`.env.local` 文件配置（已在 `.gitignore` 中）
+- 构建/部署时：环境变量在构建阶段注入到静态产物
+- 数据库 Schema：由 Coze 托管 Supabase 管理，包含 `product_owner` 和 `category` 列
+- RLS 策略：所有表启用 RLS，`anon` 角色有完整读写权限
