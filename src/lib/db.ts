@@ -117,7 +117,7 @@ async function fetchAll<T>(
 // ====== SKU 映射 ======
 
 export async function getSkuMappings(platform: Platform): Promise<SkuMapping[]> {
-  return safeOp(async () => {
+  const result = await safeOp(async () => {
     return fetchAll(
       supabase.from('sku_mappings').select('*').eq('platform', platform),
       (row: Record<string, unknown>) => ({
@@ -130,7 +130,10 @@ export async function getSkuMappings(platform: Platform): Promise<SkuMapping[]> 
         productOwner: (row.product_owner as string) || undefined,
       })
     );
-  }, [], 'getSkuMappings');
+  }, null as SkuMapping[] | null, 'getSkuMappings');
+  // safeOp 返回 null 表示失败（重试后仍失败），向上抛异常让调用方区分"空数据"和"加载失败"
+  if (result === null) throw new Error(`getSkuMappings(${platform}) failed after retries`);
+  return result;
 }
 
 export async function upsertSkuMapping(mapping: SkuMapping): Promise<boolean> {
@@ -212,7 +215,7 @@ export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<bo
 // ====== 店铺名称 ======
 
 export async function getShopNames(platform: Platform): Promise<ShopName[]> {
-  return safeOp(async () => {
+  const result = await safeOp(async () => {
     return fetchAll(
       supabase.from('shop_names').select('*').eq('platform', platform),
       (row: Record<string, unknown>) => ({
@@ -222,7 +225,9 @@ export async function getShopNames(platform: Platform): Promise<ShopName[]> {
         createdAt: Number(row.created_at) || Date.now(),
       })
     );
-  }, [], 'getShopNames');
+  }, null as ShopName[] | null, 'getShopNames');
+  if (result === null) throw new Error(`getShopNames(${platform}) failed after retries`);
+  return result;
 }
 
 export async function insertShopName(shop: ShopName): Promise<boolean> {
@@ -355,12 +360,14 @@ function mapConfigToRow(config: SavedCalcConfig, isActive: boolean): Record<stri
 }
 
 export async function getCalcConfigs(platform: Platform): Promise<SavedCalcConfig[]> {
-  return safeOp(async () => {
+  const result = await safeOp(async () => {
     return fetchAll(
       supabase.from('calc_configs').select('*').eq('platform', platform),
       (row: Record<string, unknown>) => mapRowToConfig(row)
     );
-  }, [], 'getCalcConfigs');
+  }, null as SavedCalcConfig[] | null, 'getCalcConfigs');
+  if (result === null) throw new Error(`getCalcConfigs(${platform}) failed after retries`);
+  return result;
 }
 
 export async function upsertCalcConfig(config: SavedCalcConfig, _platform: Platform, isActive: boolean): Promise<boolean> {

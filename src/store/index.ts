@@ -259,12 +259,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
             dbOps.getOrderFiles(p),
           ]);
 
-          const skus = results[0].status === 'fulfilled' ? results[0].value : [];
-          const shops = results[1].status === 'fulfilled' ? results[1].value : [];
-          const configs = results[2].status === 'fulfilled' ? results[2].value : [];
+          const skusResult = results[0];
+          const shopsResult = results[1];
+          const configsResult = results[2];
           const filesResult = results[3];
           const filesLoadOk = filesResult.status === 'fulfilled';
           const files = filesLoadOk ? (filesResult as PromiseFulfilledResult<RawOrderData[]>).value : [];
+          const skusLoadOk = skusResult.status === 'fulfilled';
+          const skus = skusLoadOk ? (skusResult as PromiseFulfilledResult<SkuMapping[]>).value : [];
+          const shopsLoadOk = shopsResult.status === 'fulfilled';
+          const shops = shopsLoadOk ? (shopsResult as PromiseFulfilledResult<ShopName[]>).value : [];
+          const configsLoadOk = configsResult.status === 'fulfilled';
+          const configs = configsLoadOk ? (configsResult as PromiseFulfilledResult<SavedCalcConfig[]>).value : [];
 
           for (const r of results) {
             if (r.status === 'rejected') {
@@ -272,21 +278,59 @@ export const useAppStore = create<AppState>()((set, get) => ({
             }
           }
 
-          return { platform: p, skus, shops, configs, files, filesLoadOk };
+          return { platform: p, skus, skusLoadOk, shops, shopsLoadOk, configs, configsLoadOk, files, filesLoadOk };
         })
       );
 
       for (const pr of platformResults) {
         if (pr.status !== 'fulfilled') continue;
-        const { platform: p, skus, shops, configs, files, filesLoadOk } = pr.value;
+        const { platform: p, skus, skusLoadOk, shops, shopsLoadOk, configs, configsLoadOk, files, filesLoadOk } = pr.value;
         anySuccess = true;
 
-        allSkuMappings.push(...skus);
-        allShopNames.push(...shops);
+        // 数据保护：SKU映射加载失败时不覆盖已有数据
+        const existingSkus = get().skuMappings.filter(m => m.platform === p);
+        if (!skusLoadOk) {
+          if (existingSkus.length > 0) {
+            allSkuMappings.push(...existingSkus);
+            console.warn(`${p} SKU映射加载失败，保留内存中现有 ${existingSkus.length} 条`);
+          }
+        } else if (skus.length > 0) {
+          allSkuMappings.push(...skus);
+        } else if (existingSkus.length > 0) {
+          allSkuMappings.push(...existingSkus);
+          console.warn(`${p} SKU映射返回空数据，保留内存中现有 ${existingSkus.length} 条`);
+        }
 
-        for (const config of configs) {
-          if (!savedConfigs[p]) savedConfigs[p] = [];
-          savedConfigs[p].push(config);
+        // 数据保护：店铺名称加载失败时不覆盖已有数据
+        const existingShops = get().shopNames.filter(s => s.platform === p);
+        if (!shopsLoadOk) {
+          if (existingShops.length > 0) {
+            allShopNames.push(...existingShops);
+            console.warn(`${p} 店铺名称加载失败，保留内存中现有 ${existingShops.length} 条`);
+          }
+        } else if (shops.length > 0) {
+          allShopNames.push(...shops);
+        } else if (existingShops.length > 0) {
+          allShopNames.push(...existingShops);
+          console.warn(`${p} 店铺名称返回空数据，保留内存中现有 ${existingShops.length} 条`);
+        }
+
+        // 数据保护：计算配置加载失败时保留已有配置
+        const existingConfigs = get().savedConfigs[p] || [];
+        if (configsLoadOk && configs.length > 0) {
+          for (const config of configs) {
+            if (!savedConfigs[p]) savedConfigs[p] = [];
+            savedConfigs[p].push(config);
+          }
+        } else if (existingConfigs.length > 0) {
+          savedConfigs[p] = [...existingConfigs];
+          if (!configsLoadOk) {
+            console.warn(`${p} 计算配置加载失败，保留内存中现有 ${existingConfigs.length} 条`);
+          } else {
+            console.warn(`${p} 计算配置返回空数据，保留内存中现有 ${existingConfigs.length} 条`);
+          }
+        } else {
+          savedConfigs[p] = [];
         }
 
         if (savedConfigs[p].length === 0) {
