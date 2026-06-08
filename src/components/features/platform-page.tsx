@@ -1634,6 +1634,7 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn, pr
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[50px] text-center">序号</TableHead>
                 <TableHead>商品名称</TableHead>
                 <TableHead className="w-[100px]">产品负责人</TableHead>
                 {showShopColumn && <TableHead className="w-[100px]">店铺名称</TableHead>}
@@ -1655,8 +1656,9 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn, pr
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedSummaries.map((s) => (
+              {sortedSummaries.map((s, idx) => (
                 <TableRow key={`${s.productName}-${s.shopName}`}>
+                  <TableCell className="text-center text-muted-foreground">{idx + 1}</TableCell>
                   <TableCell className="font-medium">{s.productName || '-'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.productOwner || '-'}</TableCell>
                   {showShopColumn && <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>}
