@@ -1553,7 +1553,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
                   商品名称: s.productName,
                   产品负责人: s.productOwner || '-',
                   店铺名称: s.shopName,
-                  销量: s.totalQuantity,
+                  '销量（同比上月）': s.totalQuantity,
                   总价: s.totalSales,
                   平均单价: s.avgUnitPrice,
                   采购单价: s.purchasePrice,
@@ -1639,7 +1639,7 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn, pr
                 <TableHead className="w-[100px]">产品负责人</TableHead>
                 {showShopColumn && <TableHead className="w-[100px]">店铺名称</TableHead>}
                 <TableHead className={`w-[80px] text-right ${sortableCls}`} onClick={() => handleSort('totalQuantity')}>
-                  销量<SortIcon field="totalQuantity" sortField={currentSortField} sortDirection={sortDirection} />
+                  销量（同比上月）<SortIcon field="totalQuantity" sortField={currentSortField} sortDirection={sortDirection} />
                 </TableHead>
                 <TableHead className={`w-[130px] text-right ${sortableCls}`} onClick={() => handleSort('totalSales')}>
                   总价<SortIcon field="totalSales" sortField={currentSortField} sortDirection={sortDirection} />
