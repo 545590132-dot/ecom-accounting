@@ -1025,6 +1025,39 @@ function PlatformStats({ platform }: { platform: Platform }) {
 
   const showShopColumn = filterShops.length > 0;
 
+  // 判断是否单选了某个月
+  const isSingleMonth = filterYearMonths.length === 1;
+  const selectedMonth = isSingleMonth ? filterYearMonths[0] : null;
+
+  // 计算上个月的年月字符串
+  const prevMonth = useMemo(() => {
+    if (!selectedMonth) return null;
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const pm = m === 1 ? 12 : m - 1;
+    const py = m === 1 ? y - 1 : y;
+    return `${py}-${String(pm).padStart(2, '0')}`;
+  }, [selectedMonth]);
+
+  // 上个月的商品汇总（用于同比）
+  const prevMonthSkuMap = useMemo(() => {
+    if (!prevMonth) return new Map<string, number>();
+    const isAllShops = filterShops.length === 0;
+    const prevOrders = summary.orders.filter((o) => {
+      if (o.orderDate !== prevMonth) return false;
+      if (filterShops.length > 0 && !filterShops.includes(o.shopName)) return false;
+      if (filterProductOwners.length > 0 && !filterProductOwners.includes(o.productOwner || '')) return false;
+      return true;
+    });
+    const map = new Map<string, number>();
+    for (const order of prevOrders) {
+      const groupKey = isAllShops
+        ? (order.productName || order.sku)
+        : `${order.productName || order.sku}|${order.shopName || '__all__'}`;
+      map.set(groupKey, (map.get(groupKey) || 0) + order.quantity);
+    }
+    return map;
+  }, [prevMonth, summary.orders, filterShops, filterProductOwners]);
+
   // 筛选后的商品汇总（全部店铺时按商品名称合并，单店铺时按商品+店铺分类）
   const filteredSkuSummaries = (() => {
     const isAllShops = filterShops.length === 0;
@@ -1557,7 +1590,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
 
       {/* 数据表格 */}
       {viewMode === 'sku' ? (
-        <SkuSummaryTable summaries={filteredSkuSummaries} profitRateRedThreshold={activeConfig?.profitRateRedThreshold ?? null} showShopColumn={showShopColumn} />
+        <SkuSummaryTable summaries={filteredSkuSummaries} profitRateRedThreshold={activeConfig?.profitRateRedThreshold ?? null} showShopColumn={showShopColumn} prevMonthSkuMap={isSingleMonth ? prevMonthSkuMap : null} />
       ) : (
         <OrderDetailTable orders={filteredOrders} profitRateRedThreshold={activeConfig?.profitRateRedThreshold ?? null} />
       )}
@@ -1568,7 +1601,7 @@ function PlatformStats({ platform }: { platform: Platform }) {
 // 商品统计表格（按商品名称分类）
 type SortDirection = 'asc' | 'desc';
 
-function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn }: { summaries: SkuSummary[]; profitRateRedThreshold: number | null; showShopColumn: boolean }) {
+function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn, prevMonthSkuMap }: { summaries: SkuSummary[]; profitRateRedThreshold: number | null; showShopColumn: boolean; prevMonthSkuMap: Map<string, number> | null }) {
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
@@ -1627,7 +1660,21 @@ function SkuSummaryTable({ summaries, profitRateRedThreshold, showShopColumn }: 
                   <TableCell className="font-medium">{s.productName || '-'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.productOwner || '-'}</TableCell>
                   {showShopColumn && <TableCell className="text-sm text-muted-foreground">{s.shopName || '-'}</TableCell>}
-                  <TableCell className="text-right font-mono">{s.totalQuantity}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    {s.totalQuantity}
+                    {prevMonthSkuMap && (() => {
+                      const isAllShops = !showShopColumn;
+                      const groupKey = isAllShops
+                        ? (s.productName || s.sku)
+                        : `${s.productName || s.sku}|${s.shopName || '__all__'}`;
+                      const prevQty = prevMonthSkuMap.get(groupKey) ?? 0;
+                      const diff = s.totalQuantity - prevQty;
+                      if (diff === 0 && prevQty === 0) return null;
+                      const color = diff < 0 ? '#ef4444' : diff > 0 ? '#10b981' : '#64748b';
+                      const sign = diff > 0 ? '+' : '';
+                      return <span style={{ color, fontSize: '0.75rem', marginLeft: 4 }}>({sign}{diff})</span>;
+                    })()}
+                  </TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.totalSales)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.avgUnitPrice)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.purchasePrice)}</TableCell>
