@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { SkuMapping, ShopName, SavedCalcConfig, RawOrderData, Platform } from '@/types';
+import type { SkuMapping, ShopName, SavedCalcConfig, RawOrderData, Platform, InventoryFile, InventoryRecord } from '@/types';
 
 // ====== Supabase 连接状态 ======
 let _isConnected = false;
@@ -605,4 +605,102 @@ export async function syncToSupabase(data: {
   }
 
   return { synced, failed };
+}
+
+// ====== 库存查询相关操作 ======
+
+/** 获取所有库存文件 */
+export async function getInventoryFiles(): Promise<InventoryFile[]> {
+  const { data, error } = await supabase
+    .from('inventory_files')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`获取库存文件失败: ${error.message}`);
+  return (data || []).map(mapRowToInventoryFile);
+}
+
+/** 获取所有库存记录 */
+export async function getInventoryRecords(): Promise<InventoryRecord[]> {
+  const { data, error } = await supabase
+    .from('inventory_records')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`获取库存记录失败: ${error.message}`);
+  return (data || []).map(mapRowToInventoryRecord);
+}
+
+/** 插入库存文件及其记录 */
+export async function insertInventoryFile(
+  fileMeta: { id: string; file_name: string; year_month: string },
+  records: { sku: string; stock_qty: number }[]
+): Promise<boolean> {
+  const { error: fileError } = await supabase.from('inventory_files').insert(fileMeta);
+  if (fileError) {
+    console.error('insertInventoryFile error:', fileError);
+    return false;
+  }
+
+  const rows = records.map(r => ({
+    id: crypto.randomUUID(),
+    file_id: fileMeta.id,
+    sku: r.sku,
+    stock_qty: r.stock_qty,
+    year_month: fileMeta.year_month,
+  }));
+
+  for (let i = 0; i < rows.length; i += 500) {
+    const batch = rows.slice(i, i + 500);
+    const { error } = await supabase.from('inventory_records').insert(batch);
+    if (error) console.error('insertInventoryRecords batch error:', error);
+  }
+  return true;
+}
+
+/** 删除库存文件及其关联记录 */
+export async function deleteInventoryFile(fileId: string): Promise<boolean> {
+  const { error } = await supabase.from('inventory_files').delete().eq('id', fileId);
+  if (error) {
+    console.error('deleteInventoryFile error:', error);
+    return false;
+  }
+  return true;
+}
+
+/** 更新库存记录的销售情况 */
+export async function updateInventorySalesStatus(
+  recordId: string,
+  salesStatus: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('inventory_records')
+    .update({ sales_status: salesStatus || null })
+    .eq('id', recordId);
+  if (error) {
+    console.error('updateInventorySalesStatus error:', error);
+    return false;
+  }
+  return true;
+}
+
+/** 映射数据库行到 InventoryFile */
+function mapRowToInventoryFile(row: Record<string, unknown>): InventoryFile {
+  return {
+    id: row.id as string,
+    fileName: row.file_name as string,
+    yearMonth: row.year_month as string,
+    createdAt: new Date(row.created_at as string).getTime(),
+  };
+}
+
+/** 映射数据库行到 InventoryRecord */
+function mapRowToInventoryRecord(row: Record<string, unknown>): InventoryRecord {
+  return {
+    id: row.id as string,
+    fileId: row.file_id as string,
+    sku: (row.sku as string) || '',
+    stockQty: Number(row.stock_qty) || 0,
+    yearMonth: row.year_month as string,
+    salesStatus: (row.sales_status as InventoryRecord['salesStatus']) || '',
+    createdAt: new Date(row.created_at as string).getTime(),
+  };
 }

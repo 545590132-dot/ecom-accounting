@@ -8,7 +8,7 @@ import type { Platform } from '@/types';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Package, ChevronLeft, ChevronRight,
-  Calculator, Store, LogOut,
+  Calculator, Store, LogOut, Warehouse,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -27,6 +27,11 @@ const NAV_ITEMS = [
     title: '店铺名称明细',
     href: '/shops',
     icon: Store,
+  },
+  {
+    title: '库存查询',
+    href: '/inventory',
+    icon: Warehouse,
   },
 ];
 

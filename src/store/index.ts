@@ -9,6 +9,8 @@ import {
   PlatformSummary,
   SavedCalcConfig,
   OrderFilterRules,
+  InventoryFile,
+  InventoryRecord,
 } from '@/types';
 import * as dbOps from '@/lib/db';
 
@@ -168,6 +170,8 @@ interface AppState {
   activeConfigId: Record<Platform, string>;
   rawOrders: Record<Platform, RawOrderData[]>;
   availableHeaders: Record<Platform, string[]>;
+  inventoryFiles: InventoryFile[];
+  inventoryRecords: InventoryRecord[];
 
   // 加载状态
   isLoading: boolean;
@@ -219,6 +223,11 @@ interface AppState {
   calculateSummary: (platform: Platform) => PlatformSummary;
   calculateAllSummaries: () => Record<Platform, PlatformSummary>;
   calculateSkuSummaries: (platform: Platform) => SkuSummary[];
+
+  // 库存查询
+  importInventory: (file: { fileName: string; yearMonth: string }, records: { sku: string; stockQty: number }[]) => void;
+  deleteInventoryFile: (fileId: string) => void;
+  updateInventorySalesStatus: (recordId: string, salesStatus: InventoryRecord['salesStatus']) => void;
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
@@ -229,6 +238,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activeConfigId: { shopee: '', lazada: '', tiktok: '' },
   rawOrders: { shopee: [], lazada: [], tiktok: [] },
   availableHeaders: { shopee: [], lazada: [], tiktok: [] },
+  inventoryFiles: [],
+  inventoryRecords: [],
   isLoading: false,
   isSaving: false,
   dbConnected: false,
@@ -387,6 +398,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const connectionOk = await connectionPromise;
       const finalAnySuccess = anySuccess || connectionOk;
 
+      // 加载库存数据
+      let inventoryFiles: InventoryFile[] = [];
+      let inventoryRecords: InventoryRecord[] = [];
+      try {
+        const invFilesResult = await dbOps.getInventoryFiles();
+        inventoryFiles = invFilesResult;
+        const invRecordsResult = await dbOps.getInventoryRecords();
+        inventoryRecords = invRecordsResult;
+      } catch (e) {
+        console.warn('加载库存数据失败:', e);
+        const existingFiles = get().inventoryFiles || [];
+        const existingRecords = get().inventoryRecords || [];
+        if (existingFiles.length > 0) inventoryFiles = existingFiles;
+        if (existingRecords.length > 0) inventoryRecords = existingRecords;
+      }
+
       // Supabase 是唯一数据源，不再从 localStorage 恢复 rawOrders
       // （localStorage 中的旧数据可能是之前有 bug 的版本保存的，恢复会导致数据错乱）
       set({
@@ -396,6 +423,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         activeConfigId,
         rawOrders,
         availableHeaders,
+        inventoryFiles,
+        inventoryRecords,
         dbConnected: finalAnySuccess,
       });
       // 加载成功后保存一份配置快照到 localStorage（仅配置，不含 rawOrders）
@@ -1036,6 +1065,67 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
 
     return Array.from(skuMap.values());
+  },
+
+  // ====== 库存操作 ======
+  importInventory: async (file, records) => {
+    const fileId = `inv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const invFile: InventoryFile = {
+      id: fileId,
+      fileName: file.fileName,
+      yearMonth: file.yearMonth,
+      createdAt: Date.now(),
+    };
+    const invRecords: InventoryRecord[] = records.map((r, i) => ({
+      id: `${fileId}-${i}`,
+      fileId,
+      sku: r.sku,
+      stockQty: r.stockQty,
+      yearMonth: file.yearMonth,
+      salesStatus: '',
+      createdAt: Date.now(),
+    }));
+
+    try {
+      await dbOps.insertInventoryFile(
+        { id: invFile.id, file_name: invFile.fileName, year_month: invFile.yearMonth },
+        records.map((r) => ({ sku: r.sku, stock_qty: r.stockQty }))
+      );
+    } catch (e) {
+      console.error('保存库存数据失败:', e);
+    }
+
+    set((s) => ({
+      inventoryFiles: [...s.inventoryFiles, invFile],
+      inventoryRecords: [...s.inventoryRecords, ...invRecords],
+    }));
+  },
+
+  deleteInventoryFile: async (fileId) => {
+    try {
+      await dbOps.deleteInventoryFile(fileId);
+    } catch (e) {
+      console.error('删除库存文件失败:', e);
+    }
+
+    set((s) => ({
+      inventoryFiles: s.inventoryFiles.filter((f) => f.id !== fileId),
+      inventoryRecords: s.inventoryRecords.filter((r) => r.fileId !== fileId),
+    }));
+  },
+
+  updateInventorySalesStatus: async (recordId, salesStatus) => {
+    try {
+      await dbOps.updateInventorySalesStatus(recordId, salesStatus);
+    } catch (e) {
+      console.error('更新销售情况失败:', e);
+    }
+
+    set((s) => ({
+      inventoryRecords: s.inventoryRecords.map((r) =>
+        r.id === recordId ? { ...r, salesStatus } : r
+      ),
+    }));
   },
 }));
 
