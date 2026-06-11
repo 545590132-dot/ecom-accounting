@@ -182,7 +182,7 @@ export interface InventoryRecord {
   sku: string; // SKU 编码（Excel 中的"商品名称"列）
   stockQty: number; // 库存量（Excel 中的"可用量"列）
   yearMonth: string; // 格式：2026-01
-  salesStatus: '平销' | '热销' | '清货' | '正常' | ''; // 销售情况
+  salesStatus: '清货' | '系统判定' | ''; // 用户选择：清货 or 系统判定
   createdAt: number;
 }
 
@@ -193,7 +193,8 @@ export interface InventoryDisplayRow {
   productOwner: string; // 产品负责人
   stock: number; // 当前库存
   monthlySales: number; // 月销量 = 当前库存 - 上月库存
-  salesStatus: '平销' | '热销' | '清货' | '正常' | ''; // 销售情况
+  salesStatus: '清货' | '系统判定' | ''; // 用户选择
+  displaySalesStatus: '热销' | '正常' | '平销' | '清货' | ''; // 实际显示的销售情况
   estimatedMonths: number | null; // 预估销售时长（月）= 库存 / 月销量
   goodsValue: number; // 货值 = 库存 * 采购成本
   purchasePrice: number; // 采购单价

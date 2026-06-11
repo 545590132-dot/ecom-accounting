@@ -50,6 +50,7 @@ interface DisplayRow {
   stock: number;
   monthlySales: number;
   salesStatus: InventoryRecord['salesStatus'];
+  displaySalesStatus: '热销' | '正常' | '平销' | '清货' | '';
   estimatedMonths: number | null;
   goodsValue: number;
   recordId: string;
@@ -100,6 +101,7 @@ export default function InventoryPage() {
   const [ymPopoverOpen, setYmPopoverOpen] = useState(false);
   const [ownerPopoverOpen, setOwnerPopoverOpen] = useState(false);
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false);
+  const [hideZeroStock, setHideZeroStock] = useState(false);
 
   // ====== 排序 ======
   type SortKey = 'stock' | 'monthlySales' | 'estimatedMonths' | 'goodsValue';
@@ -147,7 +149,7 @@ export default function InventoryPage() {
     return Array.from(owners).sort();
   }, [skuMappings, inventoryRecords]);
 
-  const availableStatuses: string[] = ['平销', '热销', '清货', '正常'];
+  const availableStatuses: string[] = ['清货', '热销', '平销', '正常']; // 筛选包含所有可能的最终状态
 
   // ====== 构建展示数据 ======
   const displayRows = useMemo(() => {
@@ -185,16 +187,10 @@ export default function InventoryPage() {
 
     const rows: DisplayRow[] = [];
     for (const [, v] of grouped) {
-      // 筛选
-      if (yearMonthFilter.length > 0 && !yearMonthFilter.includes(v.yearMonth)) continue;
-      if (statusFilter.length > 0 && (!v.salesStatus || !statusFilter.includes(v.salesStatus))) continue;
-
       const skuKey = v.sku.toLowerCase().replace(/\s/g, '');
       const mapping = skuMap.get(skuKey);
       const productName = mapping?.productName || v.sku;
       const productOwner = mapping?.productOwner || '';
-
-      if (ownerFilter.length > 0 && !ownerFilter.includes(productOwner)) continue;
 
       // 月销量 = 当月库存 - 上月库存
       const prevYM = getPrevMonth(v.yearMonth);
@@ -203,6 +199,15 @@ export default function InventoryPage() {
 
       // 预估销售时长 = 库存 / 月销量（月销量>0时）
       const estimatedMonths = monthlySales > 0 ? v.stockQty / monthlySales : null;
+
+      // 计算 displaySalesStatus
+      const displaySalesStatus: '清货' | '热销' | '正常' | '平销' = (v.salesStatus === '清货' ? '清货' : (monthlySales >= 500 ? '热销' : (estimatedMonths !== null && estimatedMonths > 0 && estimatedMonths <= 6 ? '正常' : '平销'))) as '清货' | '热销' | '正常' | '平销';
+
+      // 筛选
+      if (yearMonthFilter.length > 0 && !yearMonthFilter.includes(v.yearMonth)) continue;
+      if (statusFilter.length > 0 && !statusFilter.includes(displaySalesStatus)) continue;
+      if (ownerFilter.length > 0 && !ownerFilter.includes(productOwner)) continue;
+      if (hideZeroStock && v.stockQty === 0) continue;
 
       // 货值 = 库存 * 采购成本
       const goodsValue = v.stockQty * (mapping?.purchasePrice || 0);
@@ -214,6 +219,7 @@ export default function InventoryPage() {
         stock: v.stockQty,
         monthlySales,
         salesStatus: v.salesStatus,
+        displaySalesStatus,
         estimatedMonths,
         goodsValue,
         recordId: v.recordId,
@@ -221,17 +227,90 @@ export default function InventoryPage() {
       });
     }
 
+    // 合并相同商品名称的行
+    const mergedMap = new Map<string, {
+      productName: string;
+      productOwner: string;
+      stock: number;
+      monthlySales: number;
+      salesStatus: InventoryRecord['salesStatus'];
+      goodsValue: number;
+      yearMonth: string;
+      recordIds: string[];
+    }>();
+
+    for (const row of rows) {
+      const mergeKey = row.productName;
+      const existing = mergedMap.get(mergeKey);
+      if (existing) {
+        existing.stock += row.stock;
+        existing.monthlySales += row.monthlySales;
+        existing.goodsValue += row.goodsValue;
+        // 保留最后一个销售状态
+        if (row.salesStatus) existing.salesStatus = row.salesStatus;
+        existing.recordIds.push(row.recordId);
+      } else {
+        mergedMap.set(mergeKey, {
+          productName: row.productName,
+          productOwner: row.productOwner,
+          stock: row.stock,
+          monthlySales: row.monthlySales,
+          salesStatus: row.salesStatus,
+          goodsValue: row.goodsValue,
+          yearMonth: row.yearMonth,
+          recordIds: [row.recordId],
+        });
+      }
+    }
+
+    // 转换为最终展示行，计算系统判定
+    const mergedRows: DisplayRow[] = [];
+    for (const [, v] of mergedMap) {
+      const estimatedMonths = v.monthlySales > 0 ? v.stock / v.monthlySales : null;
+
+      // 计算实际显示的销售情况
+      let displaySalesStatus: '热销' | '正常' | '平销' | '清货' | '' = '';
+      if (v.salesStatus === '清货') {
+        displaySalesStatus = '清货';
+      } else if (v.salesStatus === '系统判定') {
+        if (v.monthlySales >= 500) {
+          displaySalesStatus = '热销';
+        } else if (estimatedMonths !== null && estimatedMonths <= 6) {
+          displaySalesStatus = '正常';
+        } else {
+          displaySalesStatus = '平销';
+        }
+      }
+
+      mergedRows.push({
+        sku: '',
+        productName: v.productName,
+        productOwner: v.productOwner,
+        stock: v.stock,
+        monthlySales: v.monthlySales,
+        salesStatus: v.salesStatus,
+        displaySalesStatus,
+        estimatedMonths,
+        goodsValue: v.goodsValue,
+        recordId: v.recordIds.join(','),
+        yearMonth: v.yearMonth,
+      });
+    }
+
+    // 隐藏库存为0的商品
+    const filtered = hideZeroStock ? mergedRows.filter(r => r.stock > 0) : mergedRows;
+
     // 排序
     if (sortKey) {
-      rows.sort((a, b) => {
+      filtered.sort((a, b) => {
         const av = a[sortKey] ?? -Infinity;
         const bv = b[sortKey] ?? -Infinity;
         return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number);
       });
     }
 
-    return rows;
-  }, [skuMappings, inventoryRecords, yearMonthFilter, ownerFilter, statusFilter, sortKey, sortDir]);
+    return filtered;
+  }, [skuMappings, inventoryRecords, yearMonthFilter, ownerFilter, statusFilter, sortKey, sortDir, hideZeroStock]);
 
   // ====== 总计行 ======
   const totalRow = useMemo(() => {
@@ -292,9 +371,9 @@ export default function InventoryPage() {
       '序号': i + 1,
       '商品名称': r.productName,
       '产品负责人': r.productOwner,
-      '库存': r.stock,
+      '月底库存': r.stock,
       '月销量': r.monthlySales,
-      '销售情况': r.salesStatus || '',
+      '销售情况': r.displaySalesStatus || '',
       '预估销售时长(月)': r.estimatedMonths !== null ? Number(r.estimatedMonths.toFixed(1)) : '',
       '货值': Number(r.goodsValue.toFixed(2)),
     }));
@@ -303,7 +382,7 @@ export default function InventoryPage() {
       '序号': '' as unknown as number,
       '商品名称': '总计',
       '产品负责人': '所有',
-      '库存': totalRow.totalStock,
+      '月底库存': totalRow.totalStock,
       '月销量': totalRow.totalMonthlySales,
       '销售情况': '',
       '预估销售时长(月)': totalRow.totalEstimatedMonths !== null ? Number(totalRow.totalEstimatedMonths.toFixed(1)) : '',
@@ -332,9 +411,10 @@ export default function InventoryPage() {
     setYearMonthFilter([]);
     setOwnerFilter([]);
     setStatusFilter([]);
+    setHideZeroStock(false);
   };
 
-  const hasActiveFilter = yearMonthFilter.length > 0 || ownerFilter.length > 0 || statusFilter.length > 0;
+  const hasActiveFilter = yearMonthFilter.length > 0 || ownerFilter.length > 0 || statusFilter.length > 0 || hideZeroStock;
 
   // ====== 年份列表 ======
   const currentYear = new Date().getFullYear();
@@ -386,7 +466,7 @@ export default function InventoryPage() {
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-8">
               <Filter className="w-3 h-3 mr-1" />
-              {yearMonthFilter.length === 0 ? '全部月份' : `月份(${yearMonthFilter.length})`}
+              {yearMonthFilter.length === 0 ? '月销月份' : `月份(${yearMonthFilter.length})`}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-48 p-2" align="start">
@@ -467,6 +547,14 @@ export default function InventoryPage() {
           </PopoverContent>
         </Popover>
 
+        <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer">
+          <Checkbox
+            checked={hideZeroStock}
+            onCheckedChange={(checked) => setHideZeroStock(checked === true)}
+          />
+          隐藏零库存
+        </label>
+
         {hasActiveFilter && (
           <Button variant="ghost" size="sm" className="h-8 text-slate-500" onClick={resetFilters}>
             <X className="w-3 h-3 mr-1" /> 清除筛选
@@ -487,7 +575,7 @@ export default function InventoryPage() {
                 onClick={() => handleSort('stock')}
               >
                 <span className="inline-flex items-center gap-1">
-                  库存 <SortIcon column="stock" />
+                  月底库存 <SortIcon column="stock" />
                 </span>
               </TableHead>
               <TableHead
@@ -545,13 +633,15 @@ export default function InventoryPage() {
                         }}
                       >
                         <SelectTrigger className="h-7 w-24 mx-auto text-xs">
-                          <SelectValue placeholder="选择" />
+                          <SelectValue placeholder="选择">
+                            {row.salesStatus === '系统判定' && row.displaySalesStatus
+                              ? row.displaySalesStatus
+                              : row.salesStatus || '选择'}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="平销">平销</SelectItem>
-                          <SelectItem value="热销">热销</SelectItem>
                           <SelectItem value="清货">清货</SelectItem>
-                          <SelectItem value="正常">正常</SelectItem>
+                          <SelectItem value="系统判定">系统判定</SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>
