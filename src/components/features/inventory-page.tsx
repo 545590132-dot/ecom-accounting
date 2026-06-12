@@ -53,7 +53,7 @@ interface DisplayRow {
   displaySalesStatus: '热销' | '正常' | '平销' | '清货' | '';
   estimatedMonths: number | null;
   goodsValue: number;
-  recordId: string;
+  recordIds: string[];
   yearMonth: string;
 }
 
@@ -164,7 +164,7 @@ export default function InventoryPage() {
     }
 
     // 按 yearMonth + sku 分组，取最新文件的库存
-    const grouped = new Map<string, { sku: string; stockQty: number; yearMonth: string; salesStatus: InventoryRecord['salesStatus']; recordId: string }>();
+    const grouped = new Map<string, { sku: string; stockQty: number; yearMonth: string; salesStatus: InventoryRecord['salesStatus']; recordIds: string[] }>();
     for (const r of inventoryRecords) {
       const groupKey = `${r.yearMonth}__${r.sku}`;
       const existing = grouped.get(groupKey);
@@ -174,7 +174,7 @@ export default function InventoryPage() {
           stockQty: r.stockQty,
           yearMonth: r.yearMonth,
           salesStatus: r.salesStatus,
-          recordId: r.id,
+          recordIds: [r.id],
         });
       }
     }
@@ -222,7 +222,7 @@ export default function InventoryPage() {
         displaySalesStatus,
         estimatedMonths,
         goodsValue,
-        recordId: v.recordId,
+        recordIds: v.recordIds,
         yearMonth: v.yearMonth,
       });
     }
@@ -248,7 +248,7 @@ export default function InventoryPage() {
         existing.goodsValue += row.goodsValue;
         // 保留最后一个销售状态
         if (row.salesStatus) existing.salesStatus = row.salesStatus;
-        existing.recordIds.push(row.recordId);
+        existing.recordIds.push(...row.recordIds);
       } else {
         mergedMap.set(mergeKey, {
           productName: row.productName,
@@ -258,7 +258,7 @@ export default function InventoryPage() {
           salesStatus: row.salesStatus,
           goodsValue: row.goodsValue,
           yearMonth: row.yearMonth,
-          recordIds: [row.recordId],
+          recordIds: row.recordIds,
         });
       }
     }
@@ -292,7 +292,7 @@ export default function InventoryPage() {
         displaySalesStatus,
         estimatedMonths,
         goodsValue: v.goodsValue,
-        recordId: v.recordIds.join(','),
+        recordIds: v.recordIds,
         yearMonth: v.yearMonth,
       });
     }
@@ -615,7 +615,7 @@ export default function InventoryPage() {
             ) : (
               <>
                 {displayRows.map((row, idx) => (
-                  <TableRow key={row.recordId}>
+                  <TableRow key={row.recordIds.join(',')}>
                     <TableCell className="text-center text-slate-400 text-sm">{idx + 1}</TableCell>
                     <TableCell className="font-medium">{row.productName}</TableCell>
                     <TableCell className="text-slate-600">{row.productOwner}</TableCell>
@@ -629,7 +629,8 @@ export default function InventoryPage() {
                       <Select
                         value={row.salesStatus || ''}
                         onValueChange={(val) => {
-                          updateInventorySalesStatus(row.recordId, val as InventoryRecord['salesStatus']);
+                          const status = val as InventoryRecord['salesStatus'];
+                          row.recordIds.forEach(id => updateInventorySalesStatus(id, status));
                         }}
                       >
                         <SelectTrigger className="h-7 w-24 mx-auto text-xs">

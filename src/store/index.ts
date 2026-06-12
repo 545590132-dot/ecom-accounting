@@ -228,6 +228,7 @@ interface AppState {
   importInventory: (file: { fileName: string; yearMonth: string }, records: { sku: string; stockQty: number }[]) => void;
   deleteInventoryFile: (fileId: string) => void;
   updateInventorySalesStatus: (recordId: string, salesStatus: InventoryRecord['salesStatus']) => void;
+  batchUpdateInventorySalesStatus: (recordIds: string[], salesStatus: InventoryRecord['salesStatus']) => void;
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
@@ -1124,6 +1125,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((s) => ({
       inventoryRecords: s.inventoryRecords.map((r) =>
         r.id === recordId ? { ...r, salesStatus } : r
+      ),
+    }));
+  },
+
+  batchUpdateInventorySalesStatus: async (recordIds, salesStatus) => {
+    const idSet = new Set(recordIds);
+    try {
+      await Promise.all(recordIds.map((id) => dbOps.updateInventorySalesStatus(id, salesStatus)));
+    } catch (e) {
+      console.error('批量更新销售情况失败:', e);
+    }
+
+    set((s) => ({
+      inventoryRecords: s.inventoryRecords.map((r) =>
+        idSet.has(r.id) ? { ...r, salesStatus } : r
       ),
     }));
   },
