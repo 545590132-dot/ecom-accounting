@@ -327,7 +327,7 @@ export function DashboardOverview() {
     [allOrders, chartYear]
   );
 
-  // 运营人产品维护情况图表数据（最新月份，排除零库存，按商品名称去重）
+  // 运营人产品维护情况图表数据（与库存查询板块逻辑一致）
   const ownerProductData = React.useMemo(() => {
     if (inventoryRecords.length === 0) return [];
 
@@ -335,10 +335,6 @@ export function DashboardOverview() {
     const allMonths = [...new Set(inventoryRecords.map(r => r.yearMonth))].sort();
     const latestMonth = allMonths[allMonths.length - 1];
     if (!latestMonth) return [];
-
-    // 上个月（用于备用）
-    const [ly, lm] = latestMonth.split('-').map(Number);
-    const prevMonth = lm === 1 ? `${ly - 1}-12` : `${ly}-${String(lm - 1).padStart(2, '0')}`;
 
     // 构建月销量查找：从三平台订单数据中汇总
     const salesQtyMap = new Map<string, number>(); // key: `${yearMonth}__${normalizedSku}` -> totalQuantity
@@ -351,19 +347,17 @@ export function DashboardOverview() {
       }
     }
 
-    // SKU 映射: sku (lowercase, no spaces) -> { productOwner, productName }
-    const skuMap = new Map<string, { owner: string; name: string }>();
+    // SKU 映射: sku (lowercase, no spaces) -> { productOwner, productName, purchasePrice }
+    const skuMap = new Map<string, { owner: string; name: string; purchasePrice: number }>();
     for (const m of skuMappings) {
       const key = m.sku.toLowerCase().replace(/\s+/g, '');
       if (!skuMap.has(key)) {
-        skuMap.set(key, { owner: m.productOwner || '未分配', name: m.productName });
+        skuMap.set(key, { owner: m.productOwner || '未分配', name: m.productName, purchasePrice: m.purchasePrice });
       }
     }
 
-    // 只取最新月份的记录，排除库存为0的，按商品名称(SKU)去重
-    const seenProductNames = new Set<string>();
-    const validRecords: { sku: string; owner: string; productName: string; stockQty: number; salesStatus: string; monthlySales: number }[] = [];
-
+    // 第一步：构建每条库存记录的行数据（与库存查询板块一致）
+    const rows: { productName: string; productOwner: string; stock: number; monthlySales: number; salesStatus: string; goodsValue: number }[] = [];
     for (const rec of inventoryRecords) {
       if (rec.yearMonth !== latestMonth) continue;
       const stock = Number(rec.stockQty);
@@ -374,43 +368,60 @@ export function DashboardOverview() {
       const owner = mapping?.owner || '未分配';
       if (owner === '未分配') continue; // 排除未分配产品负责人
       const productName = mapping?.name || rec.sku;
-
-      // 按商品名称去重（同一商品名称只计1款）
-      if (seenProductNames.has(productName)) continue;
-      seenProductNames.add(productName);
+      const purchasePrice = mapping?.purchasePrice || 0;
 
       // 月销量 = 三平台订单中该月份该SKU的销量求和
       const salesKey = `${latestMonth}__${key}`;
       const monthlySales = salesQtyMap.get(salesKey) || 0;
+      const goodsValue = stock * purchasePrice;
 
-      validRecords.push({ sku: rec.sku, owner, productName, stockQty: stock, salesStatus: rec.salesStatus || '', monthlySales });
+      rows.push({ productName, productOwner: owner, stock, monthlySales, salesStatus: rec.salesStatus || '', goodsValue });
     }
 
-    // 按产品负责人统计
+    // 第二步：合并相同商品名称（与库存查询板块一致：库存求和、月销量求和、保留最后非空销售状态）
+    const mergedMap = new Map<string, {
+      productName: string;
+      productOwner: string;
+      stock: number;
+      monthlySales: number;
+      salesStatus: string;
+      goodsValue: number;
+    }>();
+    for (const row of rows) {
+      const existing = mergedMap.get(row.productName);
+      if (existing) {
+        existing.stock += row.stock;
+        existing.monthlySales += row.monthlySales;
+        existing.goodsValue += row.goodsValue;
+        if (row.salesStatus) existing.salesStatus = row.salesStatus;
+      } else {
+        mergedMap.set(row.productName, { ...row });
+      }
+    }
+
+    // 第三步：按产品负责人统计（销售状态判定与库存查询板块合并行逻辑一致）
     const ownerStats = new Map<string, { hot: number; normal: number; slow: number; clearance: number; total: number }>();
 
-    for (const rec of validRecords) {
-      if (!ownerStats.has(rec.owner)) {
-        ownerStats.set(rec.owner, { hot: 0, normal: 0, slow: 0, clearance: 0, total: 0 });
+    for (const [, v] of mergedMap) {
+      const owner = v.productOwner;
+      if (!ownerStats.has(owner)) {
+        ownerStats.set(owner, { hot: 0, normal: 0, slow: 0, clearance: 0, total: 0 });
       }
-      const stats = ownerStats.get(rec.owner)!;
+      const stats = ownerStats.get(owner)!;
       stats.total++;
 
-      // 判断显示销售状态（与库存查询板块一致）
-      let displayStatus = '';
-      if (rec.salesStatus === '清货') {
+      // 判断显示销售状态（与库存查询板块合并行逻辑完全一致）
+      const estimatedMonths = v.monthlySales > 0 ? v.stock / v.monthlySales : null;
+      let displayStatus: '热销' | '正常' | '平销' | '清货' | '' = '';
+      if (v.salesStatus === '清货') {
         displayStatus = '清货';
-      } else {
-        // 系统判定
-        if (rec.monthlySales >= 500) {
+      } else if (v.salesStatus === '系统判定') {
+        if (v.monthlySales >= 500) {
           displayStatus = '热销';
+        } else if (estimatedMonths !== null && estimatedMonths <= 6) {
+          displayStatus = '正常';
         } else {
-          const estimatedMonths = rec.monthlySales > 0 ? rec.stockQty / rec.monthlySales : Infinity;
-          if (estimatedMonths <= 6) {
-            displayStatus = '正常';
-          } else {
-            displayStatus = '平销';
-          }
+          displayStatus = '平销';
         }
       }
 
