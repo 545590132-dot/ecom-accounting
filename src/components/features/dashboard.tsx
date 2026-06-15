@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import {
   ShoppingCart, Package, TrendingUp, TrendingDown,
-  BarChart3, Calendar,
+  BarChart3, Calendar, Users,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -247,6 +247,8 @@ export function DashboardOverview() {
   const savedConfigs = useAppStore((s) => s.savedConfigs);
   const activeConfigId = useAppStore((s) => s.activeConfigId);
   const calculateAllSummaries = useAppStore((s) => s.calculateAllSummaries);
+  const inventoryRecords = useAppStore((s) => s.inventoryRecords);
+  const inventoryFiles = useAppStore((s) => s.inventoryFiles);
 
   const summaries = React.useMemo(() => calculateAllSummaries(), [rawOrders, savedConfigs, activeConfigId, skuMappings]);
   const platforms: Platform[] = ['shopee', 'lazada', 'tiktok'];
@@ -323,6 +325,84 @@ export function DashboardOverview() {
     () => buildMonthlyChartData(allOrders, chartYear),
     [allOrders, chartYear]
   );
+
+  // 运营人产品维护情况图表数据
+  const ownerProductData = React.useMemo(() => {
+    if (inventoryRecords.length === 0) return [];
+
+    // SKU 映射: sku (lowercase, no spaces) -> productOwner
+    const skuOwnerMap = new Map<string, string>();
+    for (const m of skuMappings) {
+      const key = m.sku.toLowerCase().replace(/\s+/g, '');
+      if (m.productOwner && !skuOwnerMap.has(key)) {
+        skuOwnerMap.set(key, m.productOwner);
+      }
+    }
+
+    // 按产品负责人统计
+    const ownerStats = new Map<string, { hot: number; normal: number; slow: number; clearance: number; total: number }>();
+
+    for (const rec of inventoryRecords) {
+      const key = rec.sku.toLowerCase().replace(/\s+/g, '');
+      const owner = skuOwnerMap.get(key) || '未分配';
+
+      if (!ownerStats.has(owner)) {
+        ownerStats.set(owner, { hot: 0, normal: 0, slow: 0, clearance: 0, total: 0 });
+      }
+      const stats = ownerStats.get(owner)!;
+      stats.total++;
+
+      // 判断显示销售状态
+      let displayStatus = '';
+      if (rec.salesStatus === '清货') {
+        displayStatus = '清货';
+      } else {
+        // 系统判定逻辑: 需要月销量数据
+        // 从当前记录找月销量 = 当前月库存 - 上月库存
+        const ym = rec.yearMonth;
+        const prevYm = (() => {
+          const [y, m] = ym.split('-').map(Number);
+          const pm = m - 1;
+          if (pm === 0) return `${y - 1}-12`;
+          return `${y}-${String(pm).padStart(2, '0')}`;
+        })();
+        const prevRec = inventoryRecords.find(r => r.sku === rec.sku && r.yearMonth === prevYm);
+        const prevStock = prevRec ? Number(prevRec.stockQty) : 0;
+        const currentStock = Number(rec.stockQty);
+        const monthlySales = prevStock - currentStock; // 上月库存 - 当前库存 = 月销量(正数表示消耗)
+
+        if (monthlySales >= 500) {
+          displayStatus = '热销';
+        } else {
+          const estimatedMonths = monthlySales > 0 ? currentStock / monthlySales : Infinity;
+          if (estimatedMonths <= 6) {
+            displayStatus = '正常';
+          } else {
+            displayStatus = '平销';
+          }
+        }
+      }
+
+      if (displayStatus === '热销') stats.hot++;
+      else if (displayStatus === '正常') stats.normal++;
+      else if (displayStatus === '平销') stats.slow++;
+      else if (displayStatus === '清货') stats.clearance++;
+    }
+
+    // 转换为数组并按总产品数降序排列
+    return Array.from(ownerStats.entries())
+      .map(([owner, stats]) => ({
+        name: owner,
+        热销: stats.hot,
+        正常: stats.normal,
+        平销: stats.slow,
+        清货: stats.clearance,
+        总产品数: stats.total,
+      }))
+      .sort((a, b) => b.总产品数 - a.总产品数);
+  }, [inventoryRecords, skuMappings]);
+
+  const hasInventoryData = inventoryRecords.length > 0 && ownerProductData.length > 0;
 
   return (
     <div className="space-y-8">
@@ -452,6 +532,43 @@ export function DashboardOverview() {
                     <Bar dataKey="TikTok" fill="#fe2c55" radius={[2, 2, 0, 0]} maxBarSize={40} name="TikTok">
                       <LabelList dataKey="TikTok" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0)} />
                     </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+          <Separator />
+        </>
+      )}
+
+      {/* 运营人产品维护情况图表 */}
+      {hasInventoryData && (
+        <>
+          <div>
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              运营人产品维护情况
+            </h2>
+            <Card>
+              <CardContent className="pt-6 pb-4">
+                <ResponsiveContainer width="100%" height={Math.max(200, ownerProductData.length * 50 + 60)}>
+                  <BarChart data={ownerProductData} layout="vertical" margin={{ top: 5, right: 20, left: 80, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: '#1e293b' }} width={70} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={36}
+                      iconType="circle"
+                      iconSize={10}
+                      formatter={(value: string) => <span className="text-sm font-medium text-slate-700">{value}</span>}
+                    />
+                    <Bar dataKey="热销" fill="#ef4444" radius={[0, 2, 2, 0]} maxBarSize={20} stackId="status" name="热销" />
+                    <Bar dataKey="正常" fill="#10b981" radius={[0, 0, 0, 0]} maxBarSize={20} stackId="status" name="正常" />
+                    <Bar dataKey="平销" fill="#f59e0b" radius={[0, 0, 0, 0]} maxBarSize={20} stackId="status" name="平销" />
+                    <Bar dataKey="清货" fill="#6366f1" radius={[0, 2, 2, 0]} maxBarSize={20} stackId="status" name="清货" />
+                    <Bar dataKey="总产品数" fill="#94a3b8" radius={[0, 2, 2, 0]} maxBarSize={20} name="总产品数" />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
