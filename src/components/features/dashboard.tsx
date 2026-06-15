@@ -247,6 +247,7 @@ export function DashboardOverview() {
   const savedConfigs = useAppStore((s) => s.savedConfigs);
   const activeConfigId = useAppStore((s) => s.activeConfigId);
   const calculateAllSummaries = useAppStore((s) => s.calculateAllSummaries);
+  const calculateSummary = useAppStore((s) => s.calculateSummary);
   const inventoryRecords = useAppStore((s) => s.inventoryRecords);
   const inventoryFiles = useAppStore((s) => s.inventoryFiles);
 
@@ -335,9 +336,20 @@ export function DashboardOverview() {
     const latestMonth = allMonths[allMonths.length - 1];
     if (!latestMonth) return [];
 
-    // 上个月
+    // 上个月（用于备用）
     const [ly, lm] = latestMonth.split('-').map(Number);
     const prevMonth = lm === 1 ? `${ly - 1}-12` : `${ly}-${String(lm - 1).padStart(2, '0')}`;
+
+    // 构建月销量查找：从三平台订单数据中汇总
+    const salesQtyMap = new Map<string, number>(); // key: `${yearMonth}__${normalizedSku}` -> totalQuantity
+    const platforms: ('shopee' | 'lazada' | 'tiktok')[] = ['shopee', 'lazada', 'tiktok'];
+    for (const p of platforms) {
+      const summary = calculateSummary(p);
+      for (const order of summary.orders) {
+        const key = `${order.orderDate}__${order.sku.toLowerCase().replace(/\s+/g, '')}`;
+        salesQtyMap.set(key, (salesQtyMap.get(key) || 0) + order.quantity);
+      }
+    }
 
     // SKU 映射: sku (lowercase, no spaces) -> { productOwner, productName }
     const skuMap = new Map<string, { owner: string; name: string }>();
@@ -360,16 +372,16 @@ export function DashboardOverview() {
       const key = rec.sku.toLowerCase().replace(/\s+/g, '');
       const mapping = skuMap.get(key);
       const owner = mapping?.owner || '未分配';
+      if (owner === '未分配') continue; // 排除未分配产品负责人
       const productName = mapping?.name || rec.sku;
 
       // 按商品名称去重（同一商品名称只计1款）
       if (seenProductNames.has(productName)) continue;
       seenProductNames.add(productName);
 
-      // 计算月销量 = 上月库存 - 当月库存（正值表示销量）
-      const prevRec = inventoryRecords.find(r => r.sku.toLowerCase().replace(/\s+/g, '') === key && r.yearMonth === prevMonth);
-      const prevStock = prevRec ? Number(prevRec.stockQty) : 0;
-      const monthlySales = prevStock - stock;
+      // 月销量 = 三平台订单中该月份该SKU的销量求和
+      const salesKey = `${latestMonth}__${key}`;
+      const monthlySales = salesQtyMap.get(salesKey) || 0;
 
       validRecords.push({ sku: rec.sku, owner, productName, stockQty: stock, salesStatus: rec.salesStatus || '', monthlySales });
     }
@@ -419,7 +431,7 @@ export function DashboardOverview() {
         总产品数: stats.total,
       }))
       .sort((a, b) => b.总产品数 - a.总产品数);
-  }, [inventoryRecords, skuMappings]);
+  }, [inventoryRecords, skuMappings, calculateSummary]);
 
   const hasInventoryData = inventoryRecords.length > 0 && ownerProductData.length > 0;
 

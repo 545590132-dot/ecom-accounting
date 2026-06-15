@@ -70,12 +70,6 @@ function formatCurrency(n: number): string {
   return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function getPrevMonth(ym: string): string {
-  const [y, m] = ym.split('-').map(Number);
-  if (m === 1) return `${y - 1}-12`;
-  return `${y}-${String(m - 1).padStart(2, '0')}`;
-}
-
 export default function InventoryPage() {
   const {
     skuMappings,
@@ -84,6 +78,7 @@ export default function InventoryPage() {
     importInventory,
     deleteInventoryFile,
     batchUpdateInventorySalesStatus,
+    calculateSummary,
   } = useAppStore();
 
   // ====== 导入弹窗 ======
@@ -151,6 +146,20 @@ export default function InventoryPage() {
 
   const availableStatuses: string[] = ['清货', '热销', '平销', '正常']; // 筛选包含所有可能的最终状态
 
+  // ====== 月销量查找：从三平台订单数据中汇总 ======
+  const salesQtyMap = useMemo(() => {
+    const map = new Map<string, number>(); // key: `${yearMonth}__${normalizedSku}` -> totalQuantity
+    const platforms: ('shopee' | 'lazada' | 'tiktok')[] = ['shopee', 'lazada', 'tiktok'];
+    for (const p of platforms) {
+      const summary = calculateSummary(p);
+      for (const order of summary.orders) {
+        const key = `${order.orderDate}__${order.sku.toLowerCase().replace(/\s/g, '')}`;
+        map.set(key, (map.get(key) || 0) + order.quantity);
+      }
+    }
+    return map;
+  }, [calculateSummary]);
+
   // ====== 构建展示数据 ======
   const displayRows = useMemo(() => {
     const skuMap = new Map<string, { productName: string; productOwner: string; purchasePrice: number }>();
@@ -179,12 +188,6 @@ export default function InventoryPage() {
       }
     }
 
-    // 构建 prevMonthStockMap: yearMonth + sku -> stock
-    const allStockMap = new Map<string, number>();
-    for (const [, v] of grouped) {
-      allStockMap.set(`${v.yearMonth}__${v.sku.toLowerCase().replace(/\s/g, '')}`, v.stockQty);
-    }
-
     const rows: DisplayRow[] = [];
     for (const [, v] of grouped) {
       const skuKey = v.sku.toLowerCase().replace(/\s/g, '');
@@ -192,10 +195,9 @@ export default function InventoryPage() {
       const productName = mapping?.productName || v.sku;
       const productOwner = mapping?.productOwner || '';
 
-      // 月销量 = 上月库存 - 当月库存（正值表示销量）
-      const prevYM = getPrevMonth(v.yearMonth);
-      const prevStock = allStockMap.get(`${prevYM}__${skuKey}`) ?? 0;
-      const monthlySales = prevStock - v.stockQty;
+      // 月销量 = 三平台订单中该月份该SKU的销量求和
+      const salesKey = `${v.yearMonth}__${skuKey}`;
+      const monthlySales = salesQtyMap.get(salesKey) || 0;
 
       // 预估销售时长 = 库存 / 月销量（月销量>0时）
       const estimatedMonths = monthlySales > 0 ? v.stockQty / monthlySales : null;
