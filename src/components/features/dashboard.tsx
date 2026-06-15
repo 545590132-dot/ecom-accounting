@@ -339,13 +339,21 @@ export function DashboardOverview() {
       }
     }
 
-    // 按产品负责人统计
-    const ownerStats = new Map<string, { hot: number; normal: number; slow: number; clearance: number; total: number }>();
-
+    // 按 SKU 去重：同一 SKU 取最新月份的记录判定销售状态
+    const skuLatestMap = new Map<string, { rec: typeof inventoryRecords[0]; owner: string }>();
     for (const rec of inventoryRecords) {
       const key = rec.sku.toLowerCase().replace(/\s+/g, '');
       const owner = skuOwnerMap.get(key) || '未分配';
+      const existing = skuLatestMap.get(key);
+      if (!existing || rec.yearMonth > existing.rec.yearMonth) {
+        skuLatestMap.set(key, { rec, owner });
+      }
+    }
 
+    // 按产品负责人统计（每个 SKU 只计1次）
+    const ownerStats = new Map<string, { hot: number; normal: number; slow: number; clearance: number; total: number }>();
+
+    for (const [, { rec, owner }] of skuLatestMap) {
       if (!ownerStats.has(owner)) {
         ownerStats.set(owner, { hot: 0, normal: 0, slow: 0, clearance: 0, total: 0 });
       }
@@ -358,7 +366,6 @@ export function DashboardOverview() {
         displayStatus = '清货';
       } else {
         // 系统判定逻辑: 需要月销量数据
-        // 从当前记录找月销量 = 当前月库存 - 上月库存
         const ym = rec.yearMonth;
         const prevYm = (() => {
           const [y, m] = ym.split('-').map(Number);
@@ -369,7 +376,7 @@ export function DashboardOverview() {
         const prevRec = inventoryRecords.find(r => r.sku === rec.sku && r.yearMonth === prevYm);
         const prevStock = prevRec ? Number(prevRec.stockQty) : 0;
         const currentStock = Number(rec.stockQty);
-        const monthlySales = prevStock - currentStock; // 上月库存 - 当前库存 = 月销量(正数表示消耗)
+        const monthlySales = prevStock - currentStock;
 
         if (monthlySales >= 500) {
           displayStatus = '热销';
@@ -541,7 +548,7 @@ export function DashboardOverview() {
         </>
       )}
 
-      {/* 运营人产品维护情况图表 */}
+      {/* 运营人产品维护情况 */}
       {hasInventoryData && (
         <>
           <div>
@@ -550,27 +557,67 @@ export function DashboardOverview() {
               运营人产品维护情况
             </h2>
             <Card>
-              <CardContent className="pt-6 pb-4">
-                <ResponsiveContainer width="100%" height={Math.max(200, ownerProductData.length * 50 + 60)}>
-                  <BarChart data={ownerProductData} layout="vertical" margin={{ top: 5, right: 20, left: 80, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: '#1e293b' }} width={70} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Legend
-                      verticalAlign="bottom"
-                      height={36}
-                      iconType="circle"
-                      iconSize={10}
-                      formatter={(value: string) => <span className="text-sm font-medium text-slate-700">{value}</span>}
-                    />
-                    <Bar dataKey="热销" fill="#ef4444" radius={[0, 2, 2, 0]} maxBarSize={20} stackId="status" name="热销" />
-                    <Bar dataKey="正常" fill="#10b981" radius={[0, 0, 0, 0]} maxBarSize={20} stackId="status" name="正常" />
-                    <Bar dataKey="平销" fill="#f59e0b" radius={[0, 0, 0, 0]} maxBarSize={20} stackId="status" name="平销" />
-                    <Bar dataKey="清货" fill="#6366f1" radius={[0, 2, 2, 0]} maxBarSize={20} stackId="status" name="清货" />
-                    <Bar dataKey="总产品数" fill="#94a3b8" radius={[0, 2, 2, 0]} maxBarSize={20} name="总产品数" />
-                  </BarChart>
-                </ResponsiveContainer>
+              <CardContent className="pt-4 pb-4 px-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left py-3 px-4 font-semibold text-slate-700 whitespace-nowrap">产品负责人</th>
+                        <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />热销</span>
+                        </th>
+                        <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />正常</span>
+                        </th>
+                        <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />平销</span>
+                        </th>
+                        <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />清货</span>
+                        </th>
+                        <th className="text-center py-3 px-4 font-semibold text-slate-700 whitespace-nowrap">总产品数</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ownerProductData.map((row) => (
+                        <tr key={row.name} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
+                          <td className="py-3 px-4 font-medium text-slate-800">{row.name}</td>
+                          <td className="py-3 px-4 text-center">
+                            {row.热销 > 0 ? (
+                              <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-600">{row.热销}</span>
+                            ) : (
+                              <span className="text-slate-300">0</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {row.正常 > 0 ? (
+                              <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600">{row.正常}</span>
+                            ) : (
+                              <span className="text-slate-300">0</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {row.平销 > 0 ? (
+                              <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-600">{row.平销}</span>
+                            ) : (
+                              <span className="text-slate-300">0</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {row.清货 > 0 ? (
+                              <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600">{row.清货}</span>
+                            ) : (
+                              <span className="text-slate-300">0</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className="font-bold text-slate-800 font-mono">{row.总产品数}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </CardContent>
             </Card>
           </div>
