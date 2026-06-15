@@ -326,62 +326,74 @@ export function DashboardOverview() {
     [allOrders, chartYear]
   );
 
-  // 运营人产品维护情况图表数据
+  // 运营人产品维护情况图表数据（最新月份，排除零库存，按商品名称去重）
   const ownerProductData = React.useMemo(() => {
     if (inventoryRecords.length === 0) return [];
 
-    // SKU 映射: sku (lowercase, no spaces) -> productOwner
-    const skuOwnerMap = new Map<string, string>();
+    // 找出最新月份
+    const allMonths = [...new Set(inventoryRecords.map(r => r.yearMonth))].sort();
+    const latestMonth = allMonths[allMonths.length - 1];
+    if (!latestMonth) return [];
+
+    // 上个月
+    const [ly, lm] = latestMonth.split('-').map(Number);
+    const prevMonth = lm === 1 ? `${ly - 1}-12` : `${ly}-${String(lm - 1).padStart(2, '0')}`;
+
+    // SKU 映射: sku (lowercase, no spaces) -> { productOwner, productName }
+    const skuMap = new Map<string, { owner: string; name: string }>();
     for (const m of skuMappings) {
       const key = m.sku.toLowerCase().replace(/\s+/g, '');
-      if (m.productOwner && !skuOwnerMap.has(key)) {
-        skuOwnerMap.set(key, m.productOwner);
+      if (!skuMap.has(key)) {
+        skuMap.set(key, { owner: m.productOwner || '未分配', name: m.productName });
       }
     }
 
-    // 按 SKU 去重：同一 SKU 取最新月份的记录判定销售状态
-    const skuLatestMap = new Map<string, { rec: typeof inventoryRecords[0]; owner: string }>();
+    // 只取最新月份的记录，排除库存为0的，按商品名称(SKU)去重
+    const seenProductNames = new Set<string>();
+    const validRecords: { sku: string; owner: string; productName: string; stockQty: number; salesStatus: string; monthlySales: number }[] = [];
+
     for (const rec of inventoryRecords) {
+      if (rec.yearMonth !== latestMonth) continue;
+      const stock = Number(rec.stockQty);
+      if (stock <= 0) continue; // 排除零库存
+
       const key = rec.sku.toLowerCase().replace(/\s+/g, '');
-      const owner = skuOwnerMap.get(key) || '未分配';
-      const existing = skuLatestMap.get(key);
-      if (!existing || rec.yearMonth > existing.rec.yearMonth) {
-        skuLatestMap.set(key, { rec, owner });
-      }
+      const mapping = skuMap.get(key);
+      const owner = mapping?.owner || '未分配';
+      const productName = mapping?.name || rec.sku;
+
+      // 按商品名称去重（同一商品名称只计1款）
+      if (seenProductNames.has(productName)) continue;
+      seenProductNames.add(productName);
+
+      // 计算月销量 = 上月库存 - 当月库存（正值表示销量）
+      const prevRec = inventoryRecords.find(r => r.sku.toLowerCase().replace(/\s+/g, '') === key && r.yearMonth === prevMonth);
+      const prevStock = prevRec ? Number(prevRec.stockQty) : 0;
+      const monthlySales = prevStock - stock;
+
+      validRecords.push({ sku: rec.sku, owner, productName, stockQty: stock, salesStatus: rec.salesStatus || '', monthlySales });
     }
 
-    // 按产品负责人统计（每个 SKU 只计1次）
+    // 按产品负责人统计
     const ownerStats = new Map<string, { hot: number; normal: number; slow: number; clearance: number; total: number }>();
 
-    for (const [, { rec, owner }] of skuLatestMap) {
-      if (!ownerStats.has(owner)) {
-        ownerStats.set(owner, { hot: 0, normal: 0, slow: 0, clearance: 0, total: 0 });
+    for (const rec of validRecords) {
+      if (!ownerStats.has(rec.owner)) {
+        ownerStats.set(rec.owner, { hot: 0, normal: 0, slow: 0, clearance: 0, total: 0 });
       }
-      const stats = ownerStats.get(owner)!;
+      const stats = ownerStats.get(rec.owner)!;
       stats.total++;
 
-      // 判断显示销售状态
+      // 判断显示销售状态（与库存查询板块一致）
       let displayStatus = '';
       if (rec.salesStatus === '清货') {
         displayStatus = '清货';
       } else {
-        // 系统判定逻辑: 需要月销量数据
-        const ym = rec.yearMonth;
-        const prevYm = (() => {
-          const [y, m] = ym.split('-').map(Number);
-          const pm = m - 1;
-          if (pm === 0) return `${y - 1}-12`;
-          return `${y}-${String(pm).padStart(2, '0')}`;
-        })();
-        const prevRec = inventoryRecords.find(r => r.sku === rec.sku && r.yearMonth === prevYm);
-        const prevStock = prevRec ? Number(prevRec.stockQty) : 0;
-        const currentStock = Number(rec.stockQty);
-        const monthlySales = prevStock - currentStock;
-
-        if (monthlySales >= 500) {
+        // 系统判定
+        if (rec.monthlySales >= 500) {
           displayStatus = '热销';
         } else {
-          const estimatedMonths = monthlySales > 0 ? currentStock / monthlySales : Infinity;
+          const estimatedMonths = rec.monthlySales > 0 ? rec.stockQty / rec.monthlySales : Infinity;
           if (estimatedMonths <= 6) {
             displayStatus = '正常';
           } else {
@@ -580,7 +592,7 @@ export function DashboardOverview() {
                     </thead>
                     <tbody>
                       {ownerProductData.map((row) => (
-                        <tr key={row.name} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
+                        <tr key={row.name} className="border-b border-slate-100 hover:bg-slate-50/50">
                           <td className="py-3 px-4 font-medium text-slate-800">{row.name}</td>
                           <td className="py-3 px-4 text-center">
                             {row.热销 > 0 ? (
@@ -615,6 +627,25 @@ export function DashboardOverview() {
                           </td>
                         </tr>
                       ))}
+                      {/* 总计行 */}
+                      <tr className="border-t-2 border-slate-300 bg-slate-50/80 font-bold">
+                        <td className="py-3 px-4 text-slate-800">总计</td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="font-mono text-red-600">{ownerProductData.reduce((s, r) => s + r.热销, 0)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="font-mono text-emerald-600">{ownerProductData.reduce((s, r) => s + r.正常, 0)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="font-mono text-amber-600">{ownerProductData.reduce((s, r) => s + r.平销, 0)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="font-mono text-indigo-600">{ownerProductData.reduce((s, r) => s + r.清货, 0)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="font-bold text-slate-800 font-mono">{ownerProductData.reduce((s, r) => s + r.总产品数, 0)}</span>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>

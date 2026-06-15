@@ -83,7 +83,7 @@ export default function InventoryPage() {
     inventoryRecords,
     importInventory,
     deleteInventoryFile,
-    updateInventorySalesStatus,
+    batchUpdateInventorySalesStatus,
   } = useAppStore();
 
   // ====== 导入弹窗 ======
@@ -192,10 +192,10 @@ export default function InventoryPage() {
       const productName = mapping?.productName || v.sku;
       const productOwner = mapping?.productOwner || '';
 
-      // 月销量 = 当月库存 - 上月库存
+      // 月销量 = 上月库存 - 当月库存（正值表示销量）
       const prevYM = getPrevMonth(v.yearMonth);
       const prevStock = allStockMap.get(`${prevYM}__${skuKey}`) ?? 0;
-      const monthlySales = v.stockQty - prevStock;
+      const monthlySales = prevStock - v.stockQty;
 
       // 预估销售时长 = 库存 / 月销量（月销量>0时）
       const estimatedMonths = monthlySales > 0 ? v.stockQty / monthlySales : null;
@@ -630,7 +630,7 @@ export default function InventoryPage() {
                         value={row.salesStatus || ''}
                         onValueChange={(val) => {
                           const status = val as InventoryRecord['salesStatus'];
-                          row.recordIds.forEach(id => updateInventorySalesStatus(id, status));
+                          batchUpdateInventorySalesStatus(row.recordIds, status);
                         }}
                       >
                         <SelectTrigger className="h-7 w-24 mx-auto text-xs">

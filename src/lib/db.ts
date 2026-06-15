@@ -621,12 +621,22 @@ export async function getInventoryFiles(): Promise<InventoryFile[]> {
 
 /** 获取所有库存记录 */
 export async function getInventoryRecords(): Promise<InventoryRecord[]> {
-  const { data, error } = await supabase
-    .from('inventory_records')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(`获取库存记录失败: ${error.message}`);
-  return (data || []).map(mapRowToInventoryRecord);
+  const all: InventoryRecord[] = [];
+  let offset = 0;
+  const batchSize = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from('inventory_records')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + batchSize - 1);
+    if (error) throw new Error(`获取库存记录失败: ${error.message}`);
+    if (!data || data.length === 0) break;
+    all.push(...data.map(mapRowToInventoryRecord));
+    if (data.length < batchSize) break;
+    offset += batchSize;
+  }
+  return all;
 }
 
 /** 插入库存文件及其记录 */
