@@ -36,8 +36,23 @@ export function SkuManager() {
   const [perfMs, setPerfMs] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // SKU 编码排序：取前4位，提取数字部分按升序排，纯英文排最后
+  const skuSortKey = (sku: string): [number, string] => {
+    const prefix = sku.slice(0, 4);
+    const digits = prefix.replace(/\D/g, '');
+    if (digits.length === 0) return [Infinity, prefix]; // 纯英文排最后
+    return [parseInt(digits, 10), prefix];
+  };
+
   const platformMappings = useMemo(
-    () => skuMappings.filter((m: SkuMapping) => m.platform === selectedPlatform),
+    () => skuMappings
+      .filter((m: SkuMapping) => m.platform === selectedPlatform)
+      .sort((a, b) => {
+        const [aNum, aStr] = skuSortKey(a.sku);
+        const [bNum, bStr] = skuSortKey(b.sku);
+        if (aNum !== bNum) return aNum - bNum;
+        return aStr.localeCompare(bStr);
+      }),
     [skuMappings, selectedPlatform]
   );
 

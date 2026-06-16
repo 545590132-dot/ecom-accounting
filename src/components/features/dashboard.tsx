@@ -11,9 +11,10 @@ import {
   BarChart3, Calendar, Users,
 } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer, LabelList,
 } from 'recharts';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 
 function YuanIcon({ className }: { className?: string }) {
   return (
@@ -557,7 +558,7 @@ export function DashboardOverview() {
                         return String(v);
                       }}
                     />
-                    <Tooltip content={<ChartTooltip />} />
+                    <RechartsTooltip content={<ChartTooltip />} />
                     <Legend
                       verticalAlign="bottom"
                       height={36}
@@ -598,18 +599,58 @@ export function DashboardOverview() {
                     <thead>
                       <tr className="border-b border-slate-200">
                         <th className="text-left py-3 px-4 font-semibold text-slate-700 whitespace-nowrap">产品负责人</th>
-                        <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />热销</span>
+                        <th className="text-center py-3 px-2 font-semibold whitespace-nowrap">
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center gap-1 cursor-help"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />热销</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                月销量 ≥ 500 的商品
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </th>
-                        <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />正常</span>
+                        <th className="text-center py-3 px-1 font-semibold whitespace-nowrap text-slate-400 text-xs">占比</th>
+                        <th className="text-center py-3 px-2 font-semibold whitespace-nowrap">
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center gap-1 cursor-help"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />正常</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                月销量 &lt; 500 且预估销售时长 ≤ 6个月的商品
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </th>
-                        <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />平销</span>
+                        <th className="text-center py-3 px-1 font-semibold whitespace-nowrap text-slate-400 text-xs">占比</th>
+                        <th className="text-center py-3 px-2 font-semibold whitespace-nowrap">
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center gap-1 cursor-help"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />平销</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                月销量 &lt; 500 且预估销售时长 &gt; 6个月的商品
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </th>
-                        <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />清货</span>
+                        <th className="text-center py-3 px-1 font-semibold whitespace-nowrap text-slate-400 text-xs">占比</th>
+                        <th className="text-center py-3 px-2 font-semibold whitespace-nowrap">
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center gap-1 cursor-help"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />清货</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                用户手动标记为清货的商品
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </th>
+                        <th className="text-center py-3 px-1 font-semibold whitespace-nowrap text-slate-400 text-xs">占比</th>
                         <th className="text-center py-3 px-4 font-semibold text-slate-700 whitespace-nowrap">总产品数</th>
                       </tr>
                     </thead>
@@ -617,33 +658,45 @@ export function DashboardOverview() {
                       {ownerProductData.map((row) => (
                         <tr key={row.name} className="border-b border-slate-100 hover:bg-slate-50/50">
                           <td className="py-3 px-4 font-medium text-slate-800">{row.name}</td>
-                          <td className="py-3 px-4 text-center">
+                          <td className="py-3 px-2 text-center">
                             {row.热销 > 0 ? (
                               <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-600">{row.热销}</span>
                             ) : (
                               <span className="text-slate-300">0</span>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-center">
+                          <td className="py-3 px-1 text-center text-xs text-slate-400">
+                            {row.总产品数 > 0 ? `${((row.热销 / row.总产品数) * 100).toFixed(1)}%` : '-'}
+                          </td>
+                          <td className="py-3 px-2 text-center">
                             {row.正常 > 0 ? (
                               <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600">{row.正常}</span>
                             ) : (
                               <span className="text-slate-300">0</span>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-center">
+                          <td className="py-3 px-1 text-center text-xs text-slate-400">
+                            {row.总产品数 > 0 ? `${((row.正常 / row.总产品数) * 100).toFixed(1)}%` : '-'}
+                          </td>
+                          <td className="py-3 px-2 text-center">
                             {row.平销 > 0 ? (
                               <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-600">{row.平销}</span>
                             ) : (
                               <span className="text-slate-300">0</span>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-center">
+                          <td className="py-3 px-1 text-center text-xs text-slate-400">
+                            {row.总产品数 > 0 ? `${((row.平销 / row.总产品数) * 100).toFixed(1)}%` : '-'}
+                          </td>
+                          <td className="py-3 px-2 text-center">
                             {row.清货 > 0 ? (
                               <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600">{row.清货}</span>
                             ) : (
                               <span className="text-slate-300">0</span>
                             )}
+                          </td>
+                          <td className="py-3 px-1 text-center text-xs text-slate-400">
+                            {row.总产品数 > 0 ? `${((row.清货 / row.总产品数) * 100).toFixed(1)}%` : '-'}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <span className="font-bold text-slate-800 font-mono">{row.总产品数}</span>
@@ -653,21 +706,26 @@ export function DashboardOverview() {
                       {/* 总计行 */}
                       <tr className="border-t-2 border-slate-300 bg-slate-50/80 font-bold">
                         <td className="py-3 px-4 text-slate-800">总计</td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="font-mono text-red-600">{ownerProductData.reduce((s, r) => s + r.热销, 0)}</span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="font-mono text-emerald-600">{ownerProductData.reduce((s, r) => s + r.正常, 0)}</span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="font-mono text-amber-600">{ownerProductData.reduce((s, r) => s + r.平销, 0)}</span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="font-mono text-indigo-600">{ownerProductData.reduce((s, r) => s + r.清货, 0)}</span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="font-bold text-slate-800 font-mono">{ownerProductData.reduce((s, r) => s + r.总产品数, 0)}</span>
-                        </td>
+                        {(() => {
+                          const totHot = ownerProductData.reduce((s, r) => s + r.热销, 0);
+                          const totNormal = ownerProductData.reduce((s, r) => s + r.正常, 0);
+                          const totSlow = ownerProductData.reduce((s, r) => s + r.平销, 0);
+                          const totClearance = ownerProductData.reduce((s, r) => s + r.清货, 0);
+                          const totTotal = ownerProductData.reduce((s, r) => s + r.总产品数, 0);
+                          return (
+                            <>
+                              <td className="py-3 px-2 text-center"><span className="font-mono text-red-600">{totHot}</span></td>
+                              <td className="py-3 px-1 text-center text-xs text-slate-400">{totTotal > 0 ? `${((totHot / totTotal) * 100).toFixed(1)}%` : '-'}</td>
+                              <td className="py-3 px-2 text-center"><span className="font-mono text-emerald-600">{totNormal}</span></td>
+                              <td className="py-3 px-1 text-center text-xs text-slate-400">{totTotal > 0 ? `${((totNormal / totTotal) * 100).toFixed(1)}%` : '-'}</td>
+                              <td className="py-3 px-2 text-center"><span className="font-mono text-amber-600">{totSlow}</span></td>
+                              <td className="py-3 px-1 text-center text-xs text-slate-400">{totTotal > 0 ? `${((totSlow / totTotal) * 100).toFixed(1)}%` : '-'}</td>
+                              <td className="py-3 px-2 text-center"><span className="font-mono text-indigo-600">{totClearance}</span></td>
+                              <td className="py-3 px-1 text-center text-xs text-slate-400">{totTotal > 0 ? `${((totClearance / totTotal) * 100).toFixed(1)}%` : '-'}</td>
+                              <td className="py-3 px-4 text-center"><span className="font-bold text-slate-800 font-mono">{totTotal}</span></td>
+                            </>
+                          );
+                        })()}
                       </tr>
                     </tbody>
                   </table>
