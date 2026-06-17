@@ -183,6 +183,7 @@ export interface InventoryRecord {
   stockQty: number; // 库存量（Excel 中的"可用量"列）
   yearMonth: string; // 格式：2026-01
   salesStatus: '清货' | '系统判定' | ''; // 用户选择：清货 or 系统判定
+  adjustmentPlan: string; // 调整计划（用户自定义）
   createdAt: number;
 }
 
@@ -198,6 +199,7 @@ export interface InventoryDisplayRow {
   estimatedMonths: number | null; // 预估销售时长（月）= 库存 / 月销量
   goodsValue: number; // 货值 = 库存 * 采购成本
   purchasePrice: number; // 采购单价
+  adjustmentPlan: string; // 调整计划
 }
 
 // 格式化金额

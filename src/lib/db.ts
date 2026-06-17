@@ -692,6 +692,24 @@ export async function updateInventorySalesStatus(
   return true;
 }
 
+/** 批量更新库存记录的调整计划 */
+export async function updateInventoryAdjustmentPlan(
+  recordIds: string[],
+  adjustmentPlan: string
+): Promise<boolean> {
+  for (const id of recordIds) {
+    const { error } = await supabase
+      .from('inventory_records')
+      .update({ adjustment_plan: adjustmentPlan || '' })
+      .eq('id', id);
+    if (error) {
+      console.error('updateInventoryAdjustmentPlan error:', error);
+      return false;
+    }
+  }
+  return true;
+}
+
 /** 映射数据库行到 InventoryFile */
 function mapRowToInventoryFile(row: Record<string, unknown>): InventoryFile {
   return {
@@ -711,6 +729,7 @@ function mapRowToInventoryRecord(row: Record<string, unknown>): InventoryRecord 
     stockQty: Number(row.stock_qty) || 0,
     yearMonth: row.year_month as string,
     salesStatus: (row.sales_status as InventoryRecord['salesStatus']) || '',
+    adjustmentPlan: (row.adjustment_plan as string) || '',
     createdAt: new Date(row.created_at as string).getTime(),
   };
 }

@@ -55,6 +55,7 @@ interface DisplayRow {
   goodsValue: number;
   recordIds: string[];
   yearMonth: string;
+  adjustmentPlan: string;
 }
 
 function formatNumber(n: number, decimals = 0): string {
@@ -78,6 +79,7 @@ export default function InventoryPage() {
     importInventory,
     deleteInventoryFile,
     batchUpdateInventorySalesStatus,
+    updateInventoryAdjustmentPlan,
     calculateSummary,
   } = useAppStore();
 
@@ -104,6 +106,10 @@ export default function InventoryPage() {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
+  // ====== 调整计划编辑状态 ======
+  const [editingPlanKey, setEditingPlanKey] = useState<string | null>(null);
+  const [editingPlanValue, setEditingPlanValue] = useState('');
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -111,6 +117,12 @@ export default function InventoryPage() {
       setSortKey(key);
       setSortDir('desc');
     }
+  };
+
+  const handleSaveAdjustmentPlan = async (recordIds: string[], value: string) => {
+    await updateInventoryAdjustmentPlan(recordIds, value);
+    setEditingPlanKey(null);
+    setEditingPlanValue('');
   };
 
   const SortIcon = ({ column }: { column: SortKey }) => {
@@ -173,7 +185,7 @@ export default function InventoryPage() {
     }
 
     // 按 yearMonth + sku 分组，取最新文件的库存
-    const grouped = new Map<string, { sku: string; stockQty: number; yearMonth: string; salesStatus: InventoryRecord['salesStatus']; recordIds: string[] }>();
+    const grouped = new Map<string, { sku: string; stockQty: number; yearMonth: string; salesStatus: InventoryRecord['salesStatus']; recordIds: string[]; adjustmentPlan: string }>();
     for (const r of inventoryRecords) {
       const groupKey = `${r.yearMonth}__${r.sku}`;
       const existing = grouped.get(groupKey);
@@ -184,6 +196,7 @@ export default function InventoryPage() {
           yearMonth: r.yearMonth,
           salesStatus: r.salesStatus,
           recordIds: [r.id],
+          adjustmentPlan: r.adjustmentPlan || '',
         });
       }
     }
@@ -226,6 +239,7 @@ export default function InventoryPage() {
         goodsValue,
         recordIds: v.recordIds,
         yearMonth: v.yearMonth,
+        adjustmentPlan: v.adjustmentPlan || '',
       });
     }
 
@@ -239,6 +253,7 @@ export default function InventoryPage() {
       goodsValue: number;
       yearMonth: string;
       recordIds: string[];
+      adjustmentPlan: string;
     }>();
 
     for (const row of rows) {
@@ -251,6 +266,8 @@ export default function InventoryPage() {
         // 保留最后一个销售状态
         if (row.salesStatus) existing.salesStatus = row.salesStatus;
         existing.recordIds.push(...row.recordIds);
+        // 保留最后一个非空调整计划
+        if (row.adjustmentPlan) existing.adjustmentPlan = row.adjustmentPlan;
       } else {
         mergedMap.set(mergeKey, {
           productName: row.productName,
@@ -261,6 +278,7 @@ export default function InventoryPage() {
           goodsValue: row.goodsValue,
           yearMonth: row.yearMonth,
           recordIds: row.recordIds,
+          adjustmentPlan: row.adjustmentPlan,
         });
       }
     }
@@ -296,6 +314,7 @@ export default function InventoryPage() {
         goodsValue: v.goodsValue,
         recordIds: v.recordIds,
         yearMonth: v.yearMonth,
+        adjustmentPlan: v.adjustmentPlan,
       });
     }
 
@@ -378,6 +397,7 @@ export default function InventoryPage() {
       '销售情况': r.displaySalesStatus || '',
       '预估销售时长(月)': r.estimatedMonths !== null ? Number(r.estimatedMonths.toFixed(1)) : '',
       '货值': Number(r.goodsValue.toFixed(2)),
+      '调整计划': r.adjustmentPlan || '',
     }));
     // 总计行
     exportData.push({
@@ -389,6 +409,7 @@ export default function InventoryPage() {
       '销售情况': '',
       '预估销售时长(月)': totalRow.totalEstimatedMonths !== null ? Number(totalRow.totalEstimatedMonths.toFixed(1)) : '',
       '货值': Number(totalRow.totalGoodsValue.toFixed(2)),
+      '调整计划': '',
     });
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -605,12 +626,13 @@ export default function InventoryPage() {
                   货值 <SortIcon column="goodsValue" />
                 </span>
               </TableHead>
+              <TableHead className="text-center min-w-[120px]">调整计划</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {displayRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-slate-400">
+                <TableCell colSpan={9} className="h-24 text-center text-slate-400">
                   暂无库存数据，请先导入库存表格
                 </TableCell>
               </TableRow>
@@ -652,6 +674,39 @@ export default function InventoryPage() {
                       {row.estimatedMonths !== null ? row.estimatedMonths.toFixed(1) : '-'}
                     </TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(row.goodsValue)}</TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Input
+                          value={editingPlanKey === row.recordIds.join(',') ? editingPlanValue : (row.adjustmentPlan || '')}
+                          onChange={(e) => {
+                            setEditingPlanKey(row.recordIds.join(','));
+                            setEditingPlanValue(e.target.value);
+                          }}
+                          onFocus={() => {
+                            if (editingPlanKey !== row.recordIds.join(',')) {
+                              setEditingPlanKey(row.recordIds.join(','));
+                              setEditingPlanValue(row.adjustmentPlan || '');
+                            }
+                          }}
+                          className="h-7 text-xs border-slate-200 focus:border-slate-400"
+                          placeholder="点击填写"
+                        />
+                        {editingPlanKey === row.recordIds.join(',') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5 text-xs text-slate-500 hover:text-slate-700"
+                            onClick={() => {
+                              handleSaveAdjustmentPlan(row.recordIds, editingPlanValue);
+                              setEditingPlanKey(null);
+                              setEditingPlanValue('');
+                            }}
+                          >
+                            保存
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {/* 总计行 */}
@@ -666,6 +721,7 @@ export default function InventoryPage() {
                     {totalRow.totalEstimatedMonths !== null ? totalRow.totalEstimatedMonths.toFixed(1) : '-'}
                   </TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(totalRow.totalGoodsValue)}</TableCell>
+                  <TableCell />
                 </TableRow>
               </>
             )}
