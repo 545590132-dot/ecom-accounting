@@ -101,7 +101,24 @@ export default function InventoryPage() {
   const [hideZeroStock, setHideZeroStock] = useState(false);
 
   // ====== 排序 ======
-  type SortKey = 'stock' | 'monthlySales' | 'estimatedMonths' | 'goodsValue';
+  type SortKey = 'skuCode' | 'stock' | 'monthlySales' | 'estimatedMonths' | 'goodsValue';
+
+  // 从SKU编码前4位提取排序键：数字优先升序，纯英文排最后
+  const getSkuSortKey = (sku: string): { num: number; prefix: string } => {
+    const prefix = sku.slice(0, 4);
+    const digits = prefix.match(/\d+/);
+    if (digits) {
+      return { num: parseInt(digits[0], 10), prefix };
+    }
+    return { num: Infinity, prefix };
+  };
+
+  const getSkuDisplayCode = (sku: string): string => {
+    const prefix = sku.slice(0, 4);
+    const digits = prefix.match(/\d+/);
+    if (digits) return digits[0];
+    return prefix;
+  };
   type SortDir = 'asc' | 'desc';
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -324,6 +341,12 @@ export default function InventoryPage() {
     // 排序
     if (sortKey) {
       filtered.sort((a, b) => {
+        if (sortKey === 'skuCode') {
+          const ka = getSkuSortKey(a.sku);
+          const kb = getSkuSortKey(b.sku);
+          const cmp = ka.num - kb.num || ka.prefix.localeCompare(kb.prefix);
+          return sortDir === 'asc' ? cmp : -cmp;
+        }
         const av = a[sortKey] ?? -Infinity;
         const bv = b[sortKey] ?? -Infinity;
         return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number);
@@ -389,7 +412,7 @@ export default function InventoryPage() {
   // ====== 导出 ======
   const handleExport = useCallback(() => {
     const exportData = displayRows.map((r, i) => ({
-      '序号': i + 1,
+      '序号': getSkuDisplayCode(r.sku),
       '商品名称': r.productName,
       '产品负责人': r.productOwner,
       '月底库存': r.stock,
@@ -401,7 +424,7 @@ export default function InventoryPage() {
     }));
     // 总计行
     exportData.push({
-      '序号': '' as unknown as number,
+      '序号': '',
       '商品名称': '总计',
       '产品负责人': '所有',
       '月底库存': totalRow.totalStock,
@@ -590,7 +613,14 @@ export default function InventoryPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
-              <TableHead className="w-[50px] text-center">序号</TableHead>
+              <TableHead
+                className="cursor-pointer select-none text-center"
+                onClick={() => handleSort('skuCode')}
+              >
+                <span className="inline-flex items-center gap-1">
+                  序号 <SortIcon column="skuCode" />
+                </span>
+              </TableHead>
               <TableHead>商品名称</TableHead>
               <TableHead>产品负责人</TableHead>
               <TableHead
@@ -640,7 +670,7 @@ export default function InventoryPage() {
               <>
                 {displayRows.map((row, idx) => (
                   <TableRow key={row.recordIds.join(',')}>
-                    <TableCell className="text-center text-slate-400 text-sm">{idx + 1}</TableCell>
+                    <TableCell className="text-center text-slate-500 text-sm font-mono">{getSkuDisplayCode(row.sku)}</TableCell>
                     <TableCell className="font-medium">{row.productName}</TableCell>
                     <TableCell className="text-slate-600">{row.productOwner}</TableCell>
                     <TableCell className="text-right font-mono">{formatNumber(row.stock)}</TableCell>
