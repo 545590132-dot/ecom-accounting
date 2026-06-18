@@ -262,6 +262,7 @@ export default function InventoryPage() {
 
     // 合并相同商品名称的行
     const mergedMap = new Map<string, {
+      sku: string;
       productName: string;
       productOwner: string;
       stock: number;
@@ -287,6 +288,7 @@ export default function InventoryPage() {
         if (row.adjustmentPlan) existing.adjustmentPlan = row.adjustmentPlan;
       } else {
         mergedMap.set(mergeKey, {
+          sku: row.sku,
           productName: row.productName,
           productOwner: row.productOwner,
           stock: row.stock,
@@ -320,7 +322,7 @@ export default function InventoryPage() {
       }
 
       mergedRows.push({
-        sku: '',
+        sku: v.sku,
         productName: v.productName,
         productOwner: v.productOwner,
         stock: v.stock,
