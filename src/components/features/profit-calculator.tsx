@@ -54,6 +54,54 @@ function extractDigits(sku: string): string {
   return sku.replace(/[^0-9]/g, '');
 }
 
+// 各平台固定值设置字段定义
+interface SettingFieldDef {
+  key: keyof PlatformCalcSettings;
+  label: string;
+  unit: string; // '%' | '马币' | '人民币'
+}
+
+const SHOPEE_SETTING_FIELDS: SettingFieldDef[] = [
+  { key: 'exchangeRate', label: '汇率（1马币=?人民币）', unit: '' },
+  { key: 'overseasFee', label: '海外仓操作费', unit: '人民币' },
+  { key: 'commissionRate', label: '佣金比例', unit: '%' },
+  { key: 'savingsFee', label: '节省计划费用', unit: '马币' },
+  { key: 'fixedServiceFee', label: '固定服务费', unit: '马币' },
+  { key: 'campaignRateNormal', label: '活动服务费-平日', unit: '%' },
+  { key: 'campaignRatePromo', label: '活动服务费-大促', unit: '%' },
+  { key: 'transactionRate', label: '交易手续费', unit: '%' },
+];
+
+const LAZADA_SETTING_FIELDS: SettingFieldDef[] = [
+  { key: 'exchangeRate', label: '汇率（1马币=?人民币）', unit: '' },
+  { key: 'overseasFee', label: '海外仓操作费', unit: '人民币' },
+  { key: 'lazadaCommissionRate', label: '佣金比例', unit: '%' },
+  { key: 'coinDiscountRate', label: '金币折扣服务费比例', unit: '%' },
+  { key: 'paymentFeeRate', label: '支付手续费', unit: '%' },
+];
+
+const TIKTOK_SETTING_FIELDS: SettingFieldDef[] = [
+  { key: 'exchangeRate', label: '汇率（1马币=?人民币）', unit: '' },
+  { key: 'overseasFee', label: '海外仓操作费', unit: '人民币' },
+  { key: 'commissionRate', label: '佣金比例', unit: '%' },
+  { key: 'transactionRate', label: '交易手续费', unit: '%' },
+];
+
+const PLATFORM_SETTING_FIELDS: Record<Platform, SettingFieldDef[]> = {
+  shopee: SHOPEE_SETTING_FIELDS,
+  lazada: LAZADA_SETTING_FIELDS,
+  tiktok: TIKTOK_SETTING_FIELDS,
+};
+
+// 计算行类型
+interface CalcRow {
+  field: string;
+  myr: number;
+  cny: number;
+  tooltip?: string;
+  isCampaign?: boolean;
+}
+
 export function ProfitCalculator() {
   const { skuMappings, calculatorSettings, updateCalculatorSetting } = useAppStore();
   const [platform, setPlatform] = useState<Platform>('shopee');
@@ -87,8 +135,8 @@ export function ProfitCalculator() {
     return match?.purchasePrice ?? null;
   }, [skuInput, skuMappings, platform]);
 
-  // 计算各项金额
-  const calcResult = useMemo(() => {
+  // Shopee 计算结果
+  const shopeeResult = useMemo(() => {
     const price = parseFloat(priceMYR) || 0;
     const rate = settings.exchangeRate || 1.7;
     const purchaseCNY = matchedPurchasePrice ?? 0;
@@ -96,31 +144,107 @@ export function ProfitCalculator() {
     const overseasCNY = settings.overseasFee;
     const overseasMYR = overseasCNY / rate;
     const commissionMYR = price * (settings.commissionRate / 100);
-    const commissionCNY = commissionMYR * rate;
     const savingsMYR = settings.savingsFee;
-    const savingsCNY = savingsMYR * rate;
     const fixedFeeMYR = settings.fixedServiceFee;
-    const fixedFeeCNY = fixedFeeMYR * rate;
     const campaignRate = campaignMode === 'normal' ? settings.campaignRateNormal : settings.campaignRatePromo;
     const campaignMYR = price * (campaignRate / 100);
-    const campaignCNY = campaignMYR * rate;
     const transactionMYR = price * (settings.transactionRate / 100);
-    const transactionCNY = transactionMYR * rate;
     const profitMYR = price - purchaseMYR - overseasMYR - commissionMYR - savingsMYR - fixedFeeMYR - campaignMYR - transactionMYR;
-    const profitCNY = profitMYR * rate;
 
     return {
       price, priceMYR: price, priceCNY: price * rate,
       purchaseMYR, purchaseCNY,
       overseasMYR, overseasCNY,
-      commissionMYR, commissionCNY,
-      savingsMYR, savingsCNY,
-      fixedFeeMYR, fixedFeeCNY,
-      campaignMYR, campaignCNY,
-      transactionMYR, transactionCNY,
-      profitMYR, profitCNY,
+      commissionMYR, commissionCNY: commissionMYR * rate,
+      savingsMYR, savingsCNY: savingsMYR * rate,
+      fixedFeeMYR, fixedFeeCNY: fixedFeeMYR * rate,
+      campaignMYR, campaignCNY: campaignMYR * rate,
+      transactionMYR, transactionCNY: transactionMYR * rate,
+      profitMYR, profitCNY: profitMYR * rate,
     };
   }, [priceMYR, matchedPurchasePrice, campaignMode, settings]);
+
+  // Lazada 计算结果
+  const lazadaResult = useMemo(() => {
+    const price = parseFloat(priceMYR) || 0;
+    const rate = settings.exchangeRate || 1.7;
+    const purchaseCNY = matchedPurchasePrice ?? 0;
+    const purchaseMYR = purchaseCNY / rate;
+    const overseasCNY = settings.overseasFee;
+    const overseasMYR = overseasCNY / rate;
+    const commissionMYR = price * (settings.lazadaCommissionRate / 100);
+    const coinDiscountMYR = price * (settings.coinDiscountRate / 100);
+    const paymentFeeMYR = price * (settings.paymentFeeRate / 100);
+    const profitMYR = price - purchaseMYR - overseasMYR - commissionMYR - coinDiscountMYR - paymentFeeMYR;
+
+    return {
+      price, priceMYR: price, priceCNY: price * rate,
+      purchaseMYR, purchaseCNY,
+      overseasMYR, overseasCNY,
+      commissionMYR, commissionCNY: commissionMYR * rate,
+      coinDiscountMYR, coinDiscountCNY: coinDiscountMYR * rate,
+      paymentFeeMYR, paymentFeeCNY: paymentFeeMYR * rate,
+      profitMYR, profitCNY: profitMYR * rate,
+    };
+  }, [priceMYR, matchedPurchasePrice, settings]);
+
+  // TikTok 计算结果（框架，暂无具体公式）
+  const tiktokResult = useMemo(() => {
+    const price = parseFloat(priceMYR) || 0;
+    const rate = settings.exchangeRate || 1.7;
+    const purchaseCNY = matchedPurchasePrice ?? 0;
+    const purchaseMYR = purchaseCNY / rate;
+    const profitMYR = price - purchaseMYR;
+
+    return {
+      price, priceMYR: price, priceCNY: price * rate,
+      purchaseMYR, purchaseCNY,
+      profitMYR, profitCNY: profitMYR * rate,
+    };
+  }, [priceMYR, matchedPurchasePrice, settings]);
+
+  // 获取当前平台计算结果
+  const calcResult = useMemo(() => {
+    switch (platform) {
+      case 'shopee': return shopeeResult;
+      case 'lazada': return lazadaResult;
+      case 'tiktok': return tiktokResult;
+    }
+  }, [platform, shopeeResult, lazadaResult, tiktokResult]);
+
+  // 各平台计算行
+  const shopeeRows: CalcRow[] = [
+    { field: '商品定价', myr: shopeeResult.priceMYR, cny: shopeeResult.priceCNY },
+    { field: '采购成本', myr: shopeeResult.purchaseMYR, cny: shopeeResult.purchaseCNY, tooltip: '出厂价+海运成本+国内运费' },
+    { field: '海外仓操作费', myr: shopeeResult.overseasMYR, cny: shopeeResult.overseasCNY },
+    { field: '佣金', myr: shopeeResult.commissionMYR, cny: shopeeResult.commissionCNY },
+    { field: '节省计划费用', myr: shopeeResult.savingsMYR, cny: shopeeResult.savingsCNY },
+    { field: '固定服务费', myr: shopeeResult.fixedFeeMYR, cny: shopeeResult.fixedFeeCNY },
+    { field: '活动服务费', myr: shopeeResult.campaignMYR, cny: shopeeResult.campaignCNY, isCampaign: true },
+    { field: '交易手续费', myr: shopeeResult.transactionMYR, cny: shopeeResult.transactionCNY, tooltip: '实际是按付款金额来计算，这里按定价计算会稍微多一点点' },
+  ];
+
+  const lazadaRows: CalcRow[] = [
+    { field: '商品定价', myr: lazadaResult.priceMYR, cny: lazadaResult.priceCNY },
+    { field: '采购成本', myr: lazadaResult.purchaseMYR, cny: lazadaResult.purchaseCNY, tooltip: '出厂价+海运成本+国内运费' },
+    { field: '海外仓操作费', myr: lazadaResult.overseasMYR, cny: lazadaResult.overseasCNY },
+    { field: '佣金', myr: lazadaResult.commissionMYR, cny: lazadaResult.commissionCNY },
+    { field: '金币折扣服务费', myr: lazadaResult.coinDiscountMYR, cny: lazadaResult.coinDiscountCNY },
+    { field: '支付手续费', myr: lazadaResult.paymentFeeMYR, cny: lazadaResult.paymentFeeCNY, tooltip: '实际是按付款金额来计算，这里按定价计算会稍微多一点点' },
+  ];
+
+  const tiktokRows: CalcRow[] = [
+    { field: '商品定价', myr: tiktokResult.priceMYR, cny: tiktokResult.priceCNY },
+    { field: '采购成本', myr: tiktokResult.purchaseMYR, cny: tiktokResult.purchaseCNY, tooltip: '出厂价+海运成本+国内运费' },
+  ];
+
+  const rows: CalcRow[] = useMemo(() => {
+    switch (platform) {
+      case 'shopee': return shopeeRows;
+      case 'lazada': return lazadaRows;
+      case 'tiktok': return tiktokRows;
+    }
+  }, [platform, shopeeRows, lazadaRows, tiktokRows]);
 
   // 占比计算
   const getPercentage = useCallback((valueMYR: number) => {
@@ -147,19 +271,20 @@ export function ProfitCalculator() {
     setSettingsOpen(false);
   };
 
-  // 表格行数据
-  const rows = [
-    { field: '商品定价', myr: calcResult.priceMYR, cny: calcResult.priceCNY, isInput: true, tooltip: '' },
-    { field: '采购成本', myr: calcResult.purchaseMYR, cny: calcResult.purchaseCNY, isSkuInput: true, tooltip: '出厂价+海运成本+国内运费' },
-    { field: '海外仓操作费', myr: calcResult.overseasMYR, cny: calcResult.overseasCNY, tooltip: '' },
-    { field: '佣金', myr: calcResult.commissionMYR, cny: calcResult.commissionCNY, tooltip: '' },
-    { field: '节省计划费用', myr: calcResult.savingsMYR, cny: calcResult.savingsCNY, tooltip: '' },
-    { field: '固定服务费', myr: calcResult.fixedFeeMYR, cny: calcResult.fixedFeeCNY, tooltip: '' },
-    { field: '活动服务费', myr: calcResult.campaignMYR, cny: calcResult.campaignCNY, isCampaign: true, tooltip: '' },
-    { field: '交易手续费', myr: calcResult.transactionMYR, cny: calcResult.transactionCNY, tooltip: '实际是按付款金额来计算，这里按定价计算会稍微多一点点' },
-  ];
-
   const formatNum = (n: number) => n.toFixed(4);
+
+  // 获取平台按钮样式
+  const getPlatformBtnClass = (p: Platform) => {
+    if (platform !== p) return '';
+    switch (p) {
+      case 'shopee': return 'bg-[#ee4d2d] hover:bg-[#d4432a]';
+      case 'lazada': return 'bg-[#0f146d] hover:bg-[#0a0f5a]';
+      case 'tiktok': return 'bg-[#010101] hover:bg-[#333]';
+    }
+  };
+
+  // 当前平台的设置字段
+  const currentSettingFields = PLATFORM_SETTING_FIELDS[platform];
 
   return (
     <div className="space-y-6">
@@ -172,7 +297,7 @@ export function ProfitCalculator() {
               variant={platform === p ? 'default' : 'outline'}
               size="sm"
               onClick={() => { setPlatform(p); setSkuInput(''); setPriceMYR(''); }}
-              className={platform === p && p === 'shopee' ? 'bg-[#ee4d2d] hover:bg-[#d4432a]' : ''}
+              className={getPlatformBtnClass(p)}
             >
               {PLATFORM_LABELS[p]}
             </Button>
@@ -190,86 +315,20 @@ export function ProfitCalculator() {
               <DialogTitle>{PLATFORM_LABELS[platform]} - 固定值设置</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-3 items-center gap-4">
-                <span className="text-sm font-medium">汇率（1马币=？人民币）</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editSettings.exchangeRate}
-                  onChange={(e) => setEditSettings({ ...editSettings, exchangeRate: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2"
-                />
-              </div>
-              <div className="grid grid-cols-3 items-center gap-4">
-                <span className="text-sm font-medium">海外仓操作费（人民币）</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editSettings.overseasFee}
-                  onChange={(e) => setEditSettings({ ...editSettings, overseasFee: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2"
-                />
-              </div>
-              <div className="grid grid-cols-3 items-center gap-4">
-                <span className="text-sm font-medium">佣金比例（%）</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editSettings.commissionRate}
-                  onChange={(e) => setEditSettings({ ...editSettings, commissionRate: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2"
-                />
-              </div>
-              <div className="grid grid-cols-3 items-center gap-4">
-                <span className="text-sm font-medium">节省计划费用（马币）</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editSettings.savingsFee}
-                  onChange={(e) => setEditSettings({ ...editSettings, savingsFee: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2"
-                />
-              </div>
-              <div className="grid grid-cols-3 items-center gap-4">
-                <span className="text-sm font-medium">固定服务费（马币）</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editSettings.fixedServiceFee}
-                  onChange={(e) => setEditSettings({ ...editSettings, fixedServiceFee: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2"
-                />
-              </div>
-              <div className="grid grid-cols-3 items-center gap-4">
-                <span className="text-sm font-medium">活动服务费-平日（%）</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editSettings.campaignRateNormal}
-                  onChange={(e) => setEditSettings({ ...editSettings, campaignRateNormal: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2"
-                />
-              </div>
-              <div className="grid grid-cols-3 items-center gap-4">
-                <span className="text-sm font-medium">活动服务费-大促（%）</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editSettings.campaignRatePromo}
-                  onChange={(e) => setEditSettings({ ...editSettings, campaignRatePromo: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2"
-                />
-              </div>
-              <div className="grid grid-cols-3 items-center gap-4">
-                <span className="text-sm font-medium">交易手续费（%）</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editSettings.transactionRate}
-                  onChange={(e) => setEditSettings({ ...editSettings, transactionRate: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2"
-                />
-              </div>
+              {currentSettingFields.map((field) => (
+                <div key={field.key} className="grid grid-cols-3 items-center gap-4">
+                  <span className="text-sm font-medium">
+                    {field.label}{field.unit ? `（${field.unit}）` : ''}
+                  </span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editSettings[field.key]}
+                    onChange={(e) => setEditSettings({ ...editSettings, [field.key]: parseFloat(e.target.value) || 0 })}
+                    className="col-span-2"
+                  />
+                </div>
+              ))}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setSettingsOpen(false)}>取消</Button>
@@ -345,9 +404,7 @@ export function ProfitCalculator() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right font-mono">
-                      {row.isInput ? (
-                        <span className="font-semibold text-slate-800">{calcResult.price ? formatNum(row.myr) : '-'}</span>
-                      ) : row.isCampaign ? (
+                      {row.isCampaign ? (
                         <div className="flex items-center justify-end gap-1">
                           <span>{calcResult.price ? formatNum(row.myr) : '-'}</span>
                           <Badge
@@ -387,9 +444,9 @@ export function ProfitCalculator() {
             </Table>
           </div>
 
-          {platform !== 'shopee' && (
+          {platform === 'tiktok' && (
             <p className="text-xs text-slate-400 mt-3 text-center">
-              {PLATFORM_LABELS[platform]} 计算方式待补充，当前仅展示框架，请在「固定值设置」中配置参数
+              TikTok 计算方式待补充，当前仅展示框架，请在「固定值设置」中配置参数
             </p>
           )}
         </CardContent>
