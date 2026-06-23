@@ -222,9 +222,14 @@ export interface PlatformCalcSettings {
   campaignRatePromo: number; // 活动服务费大促比例（%）
   transactionRate: number; // 交易手续费比例（%）
   // Lazada 专属
-  lazadaCommissionRate: number; // 佣金比例（%）
-  coinDiscountRate: number; // 金币折扣服务费比例（%）
-  paymentFeeRate: number; // 支付手续费比例（%）
+  lazadaCommissionRate: number; // Lazada 佣金比例（%）
+  coinDiscountRate: number; // Lazada 金币折扣服务费比例（%）
+  paymentFeeRate: number; // Lazada 支付手续费比例（%）
+  allianceCommissionRate: number; // TikTok 联盟佣金比例（%，用户自定义）
+  platformSupportFee: number; // TikTok 平台支持费（马币，固定金额）
+  tiktokCampaignRate: number; // TikTok 活动服务费比例（%）
+  tiktokTransactionRate: number; // TikTok 交易手续费比例（%）
+  tiktokCommissionRate: number; // TikTok 佣金比例（%）
 }
 
 // 默认配置
@@ -240,6 +245,11 @@ export const DEFAULT_SHOPEE_SETTINGS: PlatformCalcSettings = {
   lazadaCommissionRate: 0,
   coinDiscountRate: 0,
   paymentFeeRate: 0,
+  allianceCommissionRate: 0,
+  platformSupportFee: 0,
+  tiktokCampaignRate: 0,
+  tiktokTransactionRate: 0,
+  tiktokCommissionRate: 0,
 };
 
 export const DEFAULT_LAZADA_SETTINGS: PlatformCalcSettings = {
@@ -254,11 +264,16 @@ export const DEFAULT_LAZADA_SETTINGS: PlatformCalcSettings = {
   lazadaCommissionRate: 17,
   coinDiscountRate: 10,
   paymentFeeRate: 4.7,
+  allianceCommissionRate: 0,
+  platformSupportFee: 0,
+  tiktokCampaignRate: 0,
+  tiktokTransactionRate: 0,
+  tiktokCommissionRate: 0,
 };
 
 export const DEFAULT_TIKTOK_SETTINGS: PlatformCalcSettings = {
   exchangeRate: 1.7,
-  overseasFee: 0,
+  overseasFee: 2.5,
   commissionRate: 0,
   savingsFee: 0,
   fixedServiceFee: 0,
@@ -268,6 +283,11 @@ export const DEFAULT_TIKTOK_SETTINGS: PlatformCalcSettings = {
   lazadaCommissionRate: 0,
   coinDiscountRate: 0,
   paymentFeeRate: 0,
+  allianceCommissionRate: 0,
+  platformSupportFee: 0.54,
+  tiktokCampaignRate: 4.86,
+  tiktokTransactionRate: 3.78,
+  tiktokCommissionRate: 10.26,
 };
 
 // 格式化金额

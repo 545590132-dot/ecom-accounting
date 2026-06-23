@@ -83,8 +83,10 @@ const LAZADA_SETTING_FIELDS: SettingFieldDef[] = [
 const TIKTOK_SETTING_FIELDS: SettingFieldDef[] = [
   { key: 'exchangeRate', label: '汇率（1马币=?人民币）', unit: '' },
   { key: 'overseasFee', label: '海外仓操作费', unit: '人民币' },
-  { key: 'commissionRate', label: '佣金比例', unit: '%' },
-  { key: 'transactionRate', label: '交易手续费', unit: '%' },
+  { key: 'tiktokCommissionRate', label: '佣金比例', unit: '%' },
+  { key: 'platformSupportFee', label: '平台支持费', unit: '马币' },
+  { key: 'tiktokCampaignRate', label: '活动服务费比例', unit: '%' },
+  { key: 'tiktokTransactionRate', label: '交易手续费比例', unit: '%' },
 ];
 
 const PLATFORM_SETTING_FIELDS: Record<Platform, SettingFieldDef[]> = {
@@ -109,6 +111,7 @@ export function ProfitCalculator() {
   const [skuInput, setSkuInput] = useState<string>('');
   const [campaignMode, setCampaignMode] = useState<'normal' | 'promo'>('normal');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [allianceCommissionRate, setAllianceCommissionRate] = useState<string>('');
 
   // 当前平台的配置
   const settings = useMemo(
@@ -188,20 +191,34 @@ export function ProfitCalculator() {
     };
   }, [priceMYR, matchedPurchasePrice, settings]);
 
-  // TikTok 计算结果（框架，暂无具体公式）
+  // TikTok 计算结果
   const tiktokResult = useMemo(() => {
     const price = parseFloat(priceMYR) || 0;
     const rate = settings.exchangeRate || 1.7;
     const purchaseCNY = matchedPurchasePrice ?? 0;
     const purchaseMYR = purchaseCNY / rate;
-    const profitMYR = price - purchaseMYR;
+    const overseasCNY = settings.overseasFee;
+    const overseasMYR = overseasCNY / rate;
+    const commissionMYR = price * (settings.tiktokCommissionRate / 100);
+    const allianceRate = parseFloat(allianceCommissionRate) || 0;
+    const allianceMYR = price * (allianceRate / 100);
+    const platformSupportMYR = settings.platformSupportFee;
+    const campaignMYR = price * (settings.tiktokCampaignRate / 100);
+    const transactionMYR = price * (settings.tiktokTransactionRate / 100);
+    const profitMYR = price - purchaseMYR - overseasMYR - commissionMYR - allianceMYR - platformSupportMYR - campaignMYR - transactionMYR;
 
     return {
       price, priceMYR: price, priceCNY: price * rate,
       purchaseMYR, purchaseCNY,
+      overseasMYR, overseasCNY,
+      commissionMYR, commissionCNY: commissionMYR * rate,
+      allianceMYR, allianceCNY: allianceMYR * rate,
+      platformSupportMYR, platformSupportCNY: platformSupportMYR * rate,
+      campaignMYR, campaignCNY: campaignMYR * rate,
+      transactionMYR, transactionCNY: transactionMYR * rate,
       profitMYR, profitCNY: profitMYR * rate,
     };
-  }, [priceMYR, matchedPurchasePrice, settings]);
+  }, [priceMYR, matchedPurchasePrice, allianceCommissionRate, settings]);
 
   // 获取当前平台计算结果
   const calcResult = useMemo(() => {
@@ -236,6 +253,12 @@ export function ProfitCalculator() {
   const tiktokRows: CalcRow[] = [
     { field: '商品定价', myr: tiktokResult.priceMYR, cny: tiktokResult.priceCNY },
     { field: '采购成本', myr: tiktokResult.purchaseMYR, cny: tiktokResult.purchaseCNY, tooltip: '出厂价+海运成本+国内运费' },
+    { field: '海外仓操作费', myr: tiktokResult.overseasMYR, cny: tiktokResult.overseasCNY },
+    { field: '佣金', myr: tiktokResult.commissionMYR, cny: tiktokResult.commissionCNY },
+    { field: '联盟佣金', myr: tiktokResult.allianceMYR, cny: tiktokResult.allianceCNY },
+    { field: '平台支持费', myr: tiktokResult.platformSupportMYR, cny: tiktokResult.platformSupportCNY },
+    { field: '活动服务费', myr: tiktokResult.campaignMYR, cny: tiktokResult.campaignCNY },
+    { field: '交易手续费', myr: tiktokResult.transactionMYR, cny: tiktokResult.transactionCNY, tooltip: '实际是按付款金额来计算，这里按定价计算会稍微多一点点' },
   ];
 
   const rows: CalcRow[] = useMemo(() => {
@@ -296,7 +319,7 @@ export function ProfitCalculator() {
               key={p}
               variant={platform === p ? 'default' : 'outline'}
               size="sm"
-              onClick={() => { setPlatform(p); setSkuInput(''); setPriceMYR(''); }}
+              onClick={() => { setPlatform(p); setSkuInput(''); setPriceMYR(''); setAllianceCommissionRate(''); }}
               className={getPlatformBtnClass(p)}
             >
               {PLATFORM_LABELS[p]}
@@ -371,6 +394,20 @@ export function ProfitCalculator() {
               )}
             </div>
           </div>
+          {platform === 'tiktok' && (
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-600">联盟佣金比例（%）</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="输入联盟佣金比例"
+                  value={allianceCommissionRate}
+                  onChange={(e) => setAllianceCommissionRate(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* 计算结果表格 */}
           <div className="rounded-md border">
@@ -444,11 +481,6 @@ export function ProfitCalculator() {
             </Table>
           </div>
 
-          {platform === 'tiktok' && (
-            <p className="text-xs text-slate-400 mt-3 text-center">
-              TikTok 计算方式待补充，当前仅展示框架，请在「固定值设置」中配置参数
-            </p>
-          )}
         </CardContent>
       </Card>
     </div>
