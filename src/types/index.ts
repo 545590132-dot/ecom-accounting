@@ -202,6 +202,60 @@ export interface InventoryDisplayRow {
   adjustmentPlan: string; // 调整计划
 }
 
+// 利润计算器配置
+export interface CalculatorSettings {
+  id: string;
+  platform: Platform;
+  settings: PlatformCalcSettings;
+  createdAt: number;
+}
+
+// 各平台计算器固定值配置
+export interface PlatformCalcSettings {
+  exchangeRate: number; // 汇率 1马币=?人民币
+  overseasFee: number; // 海外仓操作费（人民币）
+  commissionRate: number; // 佣金比例（%）
+  savingsFee: number; // 节省计划费用（马币）
+  fixedServiceFee: number; // 固定服务费（马币）
+  campaignRateNormal: number; // 活动服务费平日比例（%）
+  campaignRatePromo: number; // 活动服务费大促比例（%）
+  transactionRate: number; // 交易手续费比例（%）
+}
+
+// 默认配置
+export const DEFAULT_SHOPEE_SETTINGS: PlatformCalcSettings = {
+  exchangeRate: 1.7,
+  overseasFee: 2.5,
+  commissionRate: 9.72,
+  savingsFee: 0.28,
+  fixedServiceFee: 0.54,
+  campaignRateNormal: 5.94,
+  campaignRatePromo: 8.1,
+  transactionRate: 3.8,
+};
+
+export const DEFAULT_LAZADA_SETTINGS: PlatformCalcSettings = {
+  exchangeRate: 1.7,
+  overseasFee: 0,
+  commissionRate: 0,
+  savingsFee: 0,
+  fixedServiceFee: 0,
+  campaignRateNormal: 0,
+  campaignRatePromo: 0,
+  transactionRate: 0,
+};
+
+export const DEFAULT_TIKTOK_SETTINGS: PlatformCalcSettings = {
+  exchangeRate: 1.7,
+  overseasFee: 0,
+  commissionRate: 0,
+  savingsFee: 0,
+  fixedServiceFee: 0,
+  campaignRateNormal: 0,
+  campaignRatePromo: 0,
+  transactionRate: 0,
+};
+
 // 格式化金额
 export function formatCurrency(value: number): string {
   return value.toLocaleString('zh-CN', {

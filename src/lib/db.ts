@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { SkuMapping, ShopName, SavedCalcConfig, RawOrderData, Platform, InventoryFile, InventoryRecord } from '@/types';
+import type { SkuMapping, ShopName, SavedCalcConfig, RawOrderData, Platform, InventoryFile, InventoryRecord, CalculatorSettings } from '@/types';
 
 // ====== Supabase 连接状态 ======
 let _isConnected = false;
@@ -730,6 +730,46 @@ function mapRowToInventoryRecord(row: Record<string, unknown>): InventoryRecord 
     yearMonth: row.year_month as string,
     salesStatus: (row.sales_status as InventoryRecord['salesStatus']) || '',
     adjustmentPlan: (row.adjustment_plan as string) || '',
+    createdAt: new Date(row.created_at as string).getTime(),
+  };
+}
+
+// ====== 计算器配置 ======
+
+/** 获取所有计算器配置 */
+export async function getCalculatorSettings(): Promise<CalculatorSettings[]> {
+  const { data, error } = await supabase
+    .from('calculator_settings')
+    .select('*')
+    .order('platform', { ascending: true });
+  if (error) throw new Error(`Failed to fetch calculator settings: ${error.message}`);
+  if (!data) return [];
+  return data.map(mapRowToCalculatorSettings);
+}
+
+/** 保存计算器配置（upsert） */
+export async function upsertCalculatorSetting(setting: CalculatorSettings): Promise<boolean> {
+  const { error } = await supabase
+    .from('calculator_settings')
+    .upsert({
+      id: setting.platform,
+      platform: setting.platform,
+      settings: setting.settings,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  if (error) {
+    console.error('upsertCalculatorSetting error:', error);
+    return false;
+  }
+  return true;
+}
+
+/** 映射数据库行到 CalculatorSettings */
+function mapRowToCalculatorSettings(row: Record<string, unknown>): CalculatorSettings {
+  return {
+    id: row.id as string,
+    platform: row.platform as Platform,
+    settings: row.settings as CalculatorSettings['settings'],
     createdAt: new Date(row.created_at as string).getTime(),
   };
 }

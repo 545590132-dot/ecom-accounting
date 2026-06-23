@@ -11,6 +11,7 @@ import {
   OrderFilterRules,
   InventoryFile,
   InventoryRecord,
+  CalculatorSettings,
 } from '@/types';
 import * as dbOps from '@/lib/db';
 
@@ -230,6 +231,9 @@ interface AppState {
   updateInventorySalesStatus: (recordId: string, salesStatus: InventoryRecord['salesStatus']) => void;
   batchUpdateInventorySalesStatus: (recordIds: string[], salesStatus: InventoryRecord['salesStatus']) => void;
   updateInventoryAdjustmentPlan: (recordIds: string[], adjustmentPlan: string) => void;
+  // 计算器配置
+  calculatorSettings: CalculatorSettings[];
+  updateCalculatorSetting: (setting: CalculatorSettings) => void;
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
@@ -242,6 +246,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   availableHeaders: { shopee: [], lazada: [], tiktok: [] },
   inventoryFiles: [],
   inventoryRecords: [],
+  calculatorSettings: [],
   isLoading: false,
   isSaving: false,
   dbConnected: false,
@@ -416,6 +421,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
         if (existingRecords.length > 0) inventoryRecords = existingRecords;
       }
 
+      // 加载计算器配置
+      let calculatorSettings: CalculatorSettings[] = [];
+      try {
+        calculatorSettings = await dbOps.getCalculatorSettings();
+      } catch (e) {
+        console.warn('加载计算器配置失败:', e);
+        calculatorSettings = get().calculatorSettings || [];
+      }
+
       // Supabase 是唯一数据源，不再从 localStorage 恢复 rawOrders
       // （localStorage 中的旧数据可能是之前有 bug 的版本保存的，恢复会导致数据错乱）
       set({
@@ -427,6 +441,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         availableHeaders,
         inventoryFiles,
         inventoryRecords,
+        calculatorSettings,
         dbConnected: finalAnySuccess,
       });
       // 加载成功后保存一份配置快照到 localStorage（仅配置，不含 rawOrders）
@@ -1160,6 +1175,24 @@ export const useAppStore = create<AppState>()((set, get) => ({
         idSet.has(r.id) ? { ...r, adjustmentPlan } : r
       ),
     }));
+  },
+
+  updateCalculatorSetting: async (setting) => {
+    try {
+      await dbOps.upsertCalculatorSetting(setting);
+    } catch (e) {
+      console.error('保存计算器配置失败:', e);
+    }
+    set((s) => {
+      const existing = s.calculatorSettings.findIndex((cs) => cs.platform === setting.platform);
+      const newSettings = [...s.calculatorSettings];
+      if (existing >= 0) {
+        newSettings[existing] = setting;
+      } else {
+        newSettings.push(setting);
+      }
+      return { calculatorSettings: newSettings };
+    });
   },
 }));
 

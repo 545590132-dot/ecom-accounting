@@ -8,7 +8,7 @@ import type { Platform } from '@/types';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Package, ChevronLeft, ChevronRight,
-  Calculator, Store, LogOut, Warehouse,
+  Calculator, Store, LogOut, Warehouse, DollarSign,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -32,6 +32,11 @@ const NAV_ITEMS = [
     title: '库存查询',
     href: '/inventory',
     icon: Warehouse,
+  },
+  {
+    title: '利润计算器',
+    href: '/profit-calculator',
+    icon: DollarSign,
   },
 ];
 
