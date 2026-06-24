@@ -30,7 +30,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Settings, Info } from 'lucide-react';
+import { Settings, Info, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 const PLATFORM_LABELS: Record<Platform, string> = {
   shopee: 'Shopee',
@@ -64,7 +64,7 @@ interface SettingFieldDef {
 const SHOPEE_SETTING_FIELDS: SettingFieldDef[] = [
   { key: 'exchangeRate', label: '汇率（1马币=?人民币）', unit: '' },
   { key: 'overseasFee', label: '海外仓操作费', unit: '人民币' },
-  { key: 'commissionRate', label: '佣金比例', unit: '%' },
+  { key: 'commissionRate', label: '平台佣金比例', unit: '%' },
   { key: 'savingsFee', label: '节省计划费用', unit: '马币' },
   { key: 'fixedServiceFee', label: '固定服务费', unit: '马币' },
   { key: 'campaignRateNormal', label: '活动服务费-平日', unit: '%' },
@@ -75,15 +75,15 @@ const SHOPEE_SETTING_FIELDS: SettingFieldDef[] = [
 const LAZADA_SETTING_FIELDS: SettingFieldDef[] = [
   { key: 'exchangeRate', label: '汇率（1马币=?人民币）', unit: '' },
   { key: 'overseasFee', label: '海外仓操作费', unit: '人民币' },
-  { key: 'lazadaCommissionRate', label: '佣金比例', unit: '%' },
+  { key: 'lazadaCommissionRate', label: '平台佣金比例', unit: '%' },
   { key: 'coinDiscountRate', label: '金币折扣服务费比例', unit: '%' },
-  { key: 'paymentFeeRate', label: '支付手续费', unit: '%' },
+  { key: 'paymentFeeRate', label: '交易手续费', unit: '%' },
 ];
 
 const TIKTOK_SETTING_FIELDS: SettingFieldDef[] = [
   { key: 'exchangeRate', label: '汇率（1马币=?人民币）', unit: '' },
   { key: 'overseasFee', label: '海外仓操作费', unit: '人民币' },
-  { key: 'tiktokCommissionRate', label: '佣金比例', unit: '%' },
+  { key: 'tiktokCommissionRate', label: '平台佣金比例', unit: '%' },
   { key: 'platformSupportFee', label: '平台支持费', unit: '马币' },
   { key: 'tiktokCampaignRate', label: '活动服务费比例', unit: '%' },
   { key: 'tiktokTransactionRate', label: '交易手续费比例', unit: '%' },
@@ -102,6 +102,7 @@ interface CalcRow {
   cny: number;
   tooltip?: string;
   isCampaign?: boolean;
+  isProfit?: boolean;
 }
 
 export function ProfitCalculator() {
@@ -124,13 +125,11 @@ export function ProfitCalculator() {
     if (!skuInput.trim()) return null;
     const inputDigits = extractDigits(skuInput.trim());
     if (!inputDigits) {
-      // 纯英文输入，精确匹配SKU
       const match = skuMappings.find(
         (m) => m.sku.toLowerCase().replace(/\s/g, '') === skuInput.trim().toLowerCase().replace(/\s/g, '') && m.platform === platform
       );
       return match?.purchasePrice ?? null;
     }
-    // 数字匹配：SKU编码中的数字部分包含输入的数字
     const match = skuMappings.find((m) => {
       const skuDigits = extractDigits(m.sku);
       return skuDigits.includes(inputDigits) && m.platform === platform;
@@ -177,8 +176,8 @@ export function ProfitCalculator() {
     const overseasMYR = overseasCNY / rate;
     const commissionMYR = price * (settings.lazadaCommissionRate / 100);
     const coinDiscountMYR = price * (settings.coinDiscountRate / 100);
-    const paymentFeeMYR = price * (settings.paymentFeeRate / 100);
-    const profitMYR = price - purchaseMYR - overseasMYR - commissionMYR - coinDiscountMYR - paymentFeeMYR;
+    const transactionMYR = price * (settings.paymentFeeRate / 100);
+    const profitMYR = price - purchaseMYR - overseasMYR - commissionMYR - coinDiscountMYR - transactionMYR;
 
     return {
       price, priceMYR: price, priceCNY: price * rate,
@@ -186,7 +185,7 @@ export function ProfitCalculator() {
       overseasMYR, overseasCNY,
       commissionMYR, commissionCNY: commissionMYR * rate,
       coinDiscountMYR, coinDiscountCNY: coinDiscountMYR * rate,
-      paymentFeeMYR, paymentFeeCNY: paymentFeeMYR * rate,
+      transactionMYR, transactionCNY: transactionMYR * rate,
       profitMYR, profitCNY: profitMYR * rate,
     };
   }, [priceMYR, matchedPurchasePrice, settings]);
@@ -234,7 +233,7 @@ export function ProfitCalculator() {
     { field: '商品定价', myr: shopeeResult.priceMYR, cny: shopeeResult.priceCNY },
     { field: '采购成本', myr: shopeeResult.purchaseMYR, cny: shopeeResult.purchaseCNY, tooltip: '出厂价+海运成本+国内运费' },
     { field: '海外仓操作费', myr: shopeeResult.overseasMYR, cny: shopeeResult.overseasCNY },
-    { field: '佣金', myr: shopeeResult.commissionMYR, cny: shopeeResult.commissionCNY },
+    { field: '平台佣金', myr: shopeeResult.commissionMYR, cny: shopeeResult.commissionCNY },
     { field: '节省计划费用', myr: shopeeResult.savingsMYR, cny: shopeeResult.savingsCNY },
     { field: '固定服务费', myr: shopeeResult.fixedFeeMYR, cny: shopeeResult.fixedFeeCNY },
     { field: '活动服务费', myr: shopeeResult.campaignMYR, cny: shopeeResult.campaignCNY, isCampaign: true },
@@ -245,16 +244,16 @@ export function ProfitCalculator() {
     { field: '商品定价', myr: lazadaResult.priceMYR, cny: lazadaResult.priceCNY },
     { field: '采购成本', myr: lazadaResult.purchaseMYR, cny: lazadaResult.purchaseCNY, tooltip: '出厂价+海运成本+国内运费' },
     { field: '海外仓操作费', myr: lazadaResult.overseasMYR, cny: lazadaResult.overseasCNY },
-    { field: '佣金', myr: lazadaResult.commissionMYR, cny: lazadaResult.commissionCNY },
+    { field: '平台佣金', myr: lazadaResult.commissionMYR, cny: lazadaResult.commissionCNY },
     { field: '金币折扣服务费', myr: lazadaResult.coinDiscountMYR, cny: lazadaResult.coinDiscountCNY },
-    { field: '支付手续费', myr: lazadaResult.paymentFeeMYR, cny: lazadaResult.paymentFeeCNY, tooltip: '实际是按付款金额来计算，这里按定价计算会稍微多一点点' },
+    { field: '交易手续费', myr: lazadaResult.transactionMYR, cny: lazadaResult.transactionCNY, tooltip: '实际是按付款金额来计算，这里按定价计算会稍微多一点点' },
   ];
 
   const tiktokRows: CalcRow[] = [
     { field: '商品定价', myr: tiktokResult.priceMYR, cny: tiktokResult.priceCNY },
     { field: '采购成本', myr: tiktokResult.purchaseMYR, cny: tiktokResult.purchaseCNY, tooltip: '出厂价+海运成本+国内运费' },
     { field: '海外仓操作费', myr: tiktokResult.overseasMYR, cny: tiktokResult.overseasCNY },
-    { field: '佣金', myr: tiktokResult.commissionMYR, cny: tiktokResult.commissionCNY },
+    { field: '平台佣金', myr: tiktokResult.commissionMYR, cny: tiktokResult.commissionCNY },
     { field: '联盟佣金', myr: tiktokResult.allianceMYR, cny: tiktokResult.allianceCNY },
     { field: '平台支持费', myr: tiktokResult.platformSupportMYR, cny: tiktokResult.platformSupportCNY },
     { field: '活动服务费', myr: tiktokResult.campaignMYR, cny: tiktokResult.campaignCNY },
@@ -274,6 +273,12 @@ export function ProfitCalculator() {
     if (!calcResult.price) return '-';
     return ((valueMYR / calcResult.price) * 100).toFixed(2) + '%';
   }, [calcResult.price]);
+
+  // 利润率
+  const profitRate = useMemo(() => {
+    if (!calcResult.price) return 0;
+    return (calcResult.profitMYR / calcResult.price) * 100;
+  }, [calcResult.price, calcResult.profitMYR]);
 
   // 设置表单状态
   const [editSettings, setEditSettings] = useState<PlatformCalcSettings>(settings);
@@ -300,14 +305,28 @@ export function ProfitCalculator() {
   const getPlatformBtnClass = (p: Platform) => {
     if (platform !== p) return '';
     switch (p) {
-      case 'shopee': return 'bg-[#ee4d2d] hover:bg-[#d4432a]';
-      case 'lazada': return 'bg-[#0f146d] hover:bg-[#0a0f5a]';
-      case 'tiktok': return 'bg-[#010101] hover:bg-[#333]';
+      case 'shopee': return 'bg-[#ee4d2d] hover:bg-[#d4432a] text-white';
+      case 'lazada': return 'bg-[#0f146d] hover:bg-[#0a0f5a] text-white';
+      case 'tiktok': return 'bg-[#010101] hover:bg-[#333] text-white';
     }
   };
 
   // 当前平台的设置字段
   const currentSettingFields = PLATFORM_SETTING_FIELDS[platform];
+
+  // 利润颜色：低于20%标红
+  const profitColorClass = (() => {
+    if (!calcResult.price) return 'text-slate-400';
+    if (profitRate < 20) return 'text-red-500';
+    return 'text-emerald-600';
+  })();
+
+  // 利润行图标
+  const ProfitIcon = (() => {
+    if (!calcResult.price) return Minus;
+    if (profitRate >= 20) return TrendingUp;
+    return TrendingDown;
+  })();
 
   return (
     <div className="space-y-6">
@@ -362,13 +381,18 @@ export function ProfitCalculator() {
       </div>
 
       {/* 输入区域 */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">{PLATFORM_LABELS[platform]} 利润计算器</CardTitle>
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="pb-3 border-b border-slate-100">
+          <CardTitle className="text-base flex items-center gap-2">
+            <span className="inline-block w-1 h-5 rounded-full" style={{
+              backgroundColor: platform === 'shopee' ? '#ee4d2d' : platform === 'lazada' ? '#0f146d' : '#010101'
+            }} />
+            {PLATFORM_LABELS[platform]} 利润计算器
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="space-y-1">
+        <CardContent className="pt-4">
+          <div className="grid grid-cols-2 gap-6 mb-6">
+            <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-600">商品定价（马币）</label>
               <Input
                 type="number"
@@ -376,9 +400,10 @@ export function ProfitCalculator() {
                 placeholder="输入商品定价"
                 value={priceMYR}
                 onChange={(e) => setPriceMYR(e.target.value)}
+                className="text-lg font-mono"
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-600">商品编号/商品名称（自动匹配采购单价）</label>
               <Input
                 placeholder="输入SKU编码或商品名称"
@@ -386,7 +411,7 @@ export function ProfitCalculator() {
                 onChange={(e) => setSkuInput(e.target.value)}
               />
               {skuInput.trim() && (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className={`text-xs mt-1 ${matchedPurchasePrice !== null ? 'text-emerald-600' : 'text-amber-500'}`}>
                   {matchedPurchasePrice !== null
                     ? `已匹配采购单价：¥${matchedPurchasePrice.toFixed(2)}`
                     : '未找到匹配的SKU，请手动确认'}
@@ -395,8 +420,8 @@ export function ProfitCalculator() {
             </div>
           </div>
           {platform === 'tiktok' && (
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div className="space-y-1">
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-600">联盟佣金比例（%）</label>
                 <Input
                   type="number"
@@ -409,22 +434,44 @@ export function ProfitCalculator() {
             </div>
           )}
 
+          {/* 利润概览卡片 */}
+          {calcResult.price > 0 && (
+            <div className="mb-6 p-4 rounded-lg border bg-gradient-to-r from-slate-50 to-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ProfitIcon className={`h-5 w-5 ${profitColorClass}`} />
+                  <span className="text-sm text-slate-500">利润率</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-2xl font-bold font-mono ${profitColorClass}`}>
+                    {profitRate.toFixed(2)}%
+                  </span>
+                  {profitRate < 20 && (
+                    <Badge variant="destructive" className="text-xs">
+                      低于20%
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 计算结果表格 */}
-          <div className="rounded-md border">
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow className="bg-slate-50">
-                  <TableHead className="w-[160px]">字段</TableHead>
-                  <TableHead className="text-right">金额（马币）</TableHead>
-                  <TableHead className="text-right">金额（人民币）</TableHead>
-                  <TableHead className="text-right">占比</TableHead>
+                <TableRow className="bg-slate-50/80">
+                  <TableHead className="w-[180px] text-center font-semibold">计费项</TableHead>
+                  <TableHead className="text-right font-semibold">金额（马币）</TableHead>
+                  <TableHead className="text-right font-semibold">金额（人民币）</TableHead>
+                  <TableHead className="text-right font-semibold">占比</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.field}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-1">
+                {rows.map((row, idx) => (
+                  <TableRow key={row.field} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}>
+                    <TableCell className="font-medium text-center">
+                      <div className="flex items-center justify-center gap-1">
                         {row.field}
                         {row.tooltip && (
                           <TooltipProvider>
@@ -442,11 +489,11 @@ export function ProfitCalculator() {
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {row.isCampaign ? (
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-2">
                           <span>{calcResult.price ? formatNum(row.myr) : '-'}</span>
                           <Badge
                             variant={campaignMode === 'normal' ? 'secondary' : 'default'}
-                            className="cursor-pointer text-xs px-1.5 py-0 ml-1"
+                            className="cursor-pointer text-xs px-2 py-0.5"
                             onClick={() => setCampaignMode(campaignMode === 'normal' ? 'promo' : 'normal')}
                           >
                             {campaignMode === 'normal' ? '平日' : '大促'}
@@ -459,21 +506,26 @@ export function ProfitCalculator() {
                     <TableCell className="text-right font-mono">
                       {calcResult.price ? formatNum(row.cny) : '-'}
                     </TableCell>
-                    <TableCell className="text-right font-mono">
+                    <TableCell className="text-right font-mono text-slate-500">
                       {getPercentage(row.myr)}
                     </TableCell>
                   </TableRow>
                 ))}
                 {/* 利润行 */}
-                <TableRow className="bg-slate-50 font-bold">
-                  <TableCell className="font-bold">利润</TableCell>
-                  <TableCell className={`text-right font-mono font-bold ${calcResult.profitMYR >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                <TableRow className="border-t-2 border-slate-300 bg-slate-50/80">
+                  <TableCell className="font-bold text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <ProfitIcon className={`h-4 w-4 ${profitColorClass}`} />
+                      <span>利润</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className={`text-right font-mono font-bold text-base ${profitColorClass}`}>
                     {calcResult.price ? formatNum(calcResult.profitMYR) : '-'}
                   </TableCell>
-                  <TableCell className={`text-right font-mono font-bold ${calcResult.profitCNY >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <TableCell className={`text-right font-mono font-bold text-base ${profitColorClass}`}>
                     {calcResult.price ? formatNum(calcResult.profitCNY) : '-'}
                   </TableCell>
-                  <TableCell className={`text-right font-mono font-bold ${calcResult.profitMYR >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <TableCell className={`text-right font-mono font-bold text-base ${profitColorClass}`}>
                     {getPercentage(calcResult.profitMYR)}
                   </TableCell>
                 </TableRow>
