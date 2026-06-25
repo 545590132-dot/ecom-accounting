@@ -413,8 +413,10 @@ export default function InventoryPage() {
 
   // ====== 导出 ======
   const handleExport = useCallback(() => {
-    const exportData = displayRows.map((r, i) => ({
-      '序号': getSkuDisplayCode(r.sku),
+    type ExportRow = Record<string, string | number>;
+    const exportData: ExportRow[] = displayRows.map((r, i) => ({
+      '序号': i + 1,
+      '商品编号': getSkuDisplayCode(r.sku),
       '商品名称': r.productName,
       '产品负责人': r.productOwner,
       '月底库存': r.stock,
@@ -427,6 +429,7 @@ export default function InventoryPage() {
     // 总计行
     exportData.push({
       '序号': '',
+      '商品编号': '',
       '商品名称': '总计',
       '产品负责人': '所有',
       '月底库存': totalRow.totalStock,
@@ -615,12 +618,13 @@ export default function InventoryPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
+              <TableHead className="text-center w-[50px]">序号</TableHead>
               <TableHead
                 className="cursor-pointer select-none text-center"
                 onClick={() => handleSort('skuCode')}
               >
                 <span className="inline-flex items-center gap-1">
-                  序号 <SortIcon column="skuCode" />
+                  商品编号 <SortIcon column="skuCode" />
                 </span>
               </TableHead>
               <TableHead>商品名称</TableHead>
@@ -664,7 +668,7 @@ export default function InventoryPage() {
           <TableBody>
             {displayRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center text-slate-400">
+                <TableCell colSpan={10} className="h-24 text-center text-slate-400">
                   暂无库存数据，请先导入库存表格
                 </TableCell>
               </TableRow>
@@ -672,6 +676,7 @@ export default function InventoryPage() {
               <>
                 {displayRows.map((row, idx) => (
                   <TableRow key={row.recordIds.join(',')}>
+                    <TableCell className="text-center text-slate-400 text-sm">{idx + 1}</TableCell>
                     <TableCell className="text-center text-slate-500 text-sm font-mono">{getSkuDisplayCode(row.sku)}</TableCell>
                     <TableCell className="font-medium">{row.productName}</TableCell>
                     <TableCell className="text-slate-600">{row.productOwner}</TableCell>
@@ -743,6 +748,7 @@ export default function InventoryPage() {
                 ))}
                 {/* 总计行 */}
                 <TableRow className="bg-slate-100 font-bold">
+                  <TableCell />
                   <TableCell className="text-center text-slate-500">-</TableCell>
                   <TableCell>总计</TableCell>
                   <TableCell>所有</TableCell>

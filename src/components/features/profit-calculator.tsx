@@ -123,18 +123,46 @@ export function ProfitCalculator() {
   // 采购成本自动匹配
   const matchedPurchasePrice = useMemo(() => {
     if (!skuInput.trim()) return null;
-    const inputDigits = extractDigits(skuInput.trim());
-    if (!inputDigits) {
-      const match = skuMappings.find(
-        (m) => m.sku.toLowerCase().replace(/\s/g, '') === skuInput.trim().toLowerCase().replace(/\s/g, '') && m.platform === platform
-      );
-      return match?.purchasePrice ?? null;
+    const input = skuInput.trim().toLowerCase().replace(/\s/g, '');
+    const inputDigits = extractDigits(input);
+    const platformMappings = skuMappings.filter((m) => m.platform === platform);
+
+    // 1. 精确匹配SKU编码
+    const exactSku = platformMappings.find(
+      (m) => m.sku.toLowerCase().replace(/\s/g, '') === input
+    );
+    if (exactSku) return exactSku.purchasePrice;
+
+    // 2. 精确匹配商品名称
+    const exactName = platformMappings.find(
+      (m) => m.productName.toLowerCase().replace(/\s/g, '') === input
+    );
+    if (exactName) return exactName.purchasePrice;
+
+    // 3. 包含匹配商品名称（输入是名称的一部分）
+    const partialName = platformMappings.find(
+      (m) => m.productName.toLowerCase().replace(/\s/g, '').includes(input)
+    );
+    if (partialName) return partialName.purchasePrice;
+
+    // 4. 数字部分匹配：取输入的数字部分，与SKU编码的前4位数字做前缀匹配
+    if (inputDigits) {
+      // 输入数字前缀匹配SKU数字前缀
+      const digitMatch = platformMappings.find((m) => {
+        const skuDigits = extractDigits(m.sku).slice(0, 4);
+        return skuDigits.startsWith(inputDigits.slice(0, 4)) && skuDigits.length > 0;
+      });
+      if (digitMatch) return digitMatch.purchasePrice;
+
+      // 也尝试与商品名称中的数字匹配
+      const nameDigitMatch = platformMappings.find((m) => {
+        const nameDigits = extractDigits(m.productName);
+        return nameDigits.includes(inputDigits) && nameDigits.length > 0;
+      });
+      if (nameDigitMatch) return nameDigitMatch.purchasePrice;
     }
-    const match = skuMappings.find((m) => {
-      const skuDigits = extractDigits(m.sku);
-      return skuDigits.includes(inputDigits) && m.platform === platform;
-    });
-    return match?.purchasePrice ?? null;
+
+    return null;
   }, [skuInput, skuMappings, platform]);
 
   // Shopee 计算结果
