@@ -1093,13 +1093,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
       yearMonth: file.yearMonth,
       createdAt: Date.now(),
     };
+    
+    // 获取当前状态中已有的销售状态映射（SKU -> salesStatus）
+    const currentStatusMap = new Map<string, string>();
+    get().inventoryRecords.forEach((rec) => {
+      if (rec.salesStatus && !currentStatusMap.has(rec.sku.toLowerCase())) {
+        currentStatusMap.set(rec.sku.toLowerCase(), rec.salesStatus);
+      }
+    });
+    
     const invRecords: InventoryRecord[] = records.map((r, i) => ({
       id: `${fileId}-${i}`,
       fileId,
       sku: r.sku,
       stockQty: r.stockQty,
       yearMonth: file.yearMonth,
-      salesStatus: '',
+      salesStatus: (currentStatusMap.get(r.sku.toLowerCase()) || '') as '清货' | '系统判定' | '',
       recordIds: [`${fileId}-${i}`],
       adjustmentPlan: '',
       createdAt: Date.now(),
@@ -1108,7 +1117,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     try {
       await dbOps.insertInventoryFile(
         { id: invFile.id, file_name: invFile.fileName, year_month: invFile.yearMonth },
-        records.map((r) => ({ sku: r.sku, stock_qty: r.stockQty }))
+        records.map((r) => ({ sku: r.sku, stock_qty: r.stockQty, sales_status: currentStatusMap.get(r.sku.toLowerCase()) || '' }))
       );
     } catch (e) {
       console.error('保存库存数据失败:', e);
