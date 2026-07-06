@@ -786,7 +786,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       configId: data.configId,
     };
     set((s) => ({
-      rawOrders: { ...s.rawOrders, [platform]: [...s.rawOrders[platform], orderFile] },
+      rawOrders: { ...s.rawOrders, [platform]: [orderFile, ...s.rawOrders[platform]] },
     }));
     get().mergeHeaders(platform, data.headers);
     syncToRemote('importOrders', async () => { const r = await dbOps.insertOrderFile(
@@ -1133,8 +1133,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
 
     set((s) => ({
-      inventoryFiles: [...s.inventoryFiles, invFile],
-      inventoryRecords: [...s.inventoryRecords, ...invRecords],
+      inventoryFiles: [invFile, ...s.inventoryFiles],
+      inventoryRecords: [...invRecords, ...s.inventoryRecords],
     }));
   },
 
