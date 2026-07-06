@@ -275,7 +275,7 @@ export default function InventoryPage() {
     }>();
 
     for (const row of rows) {
-      const mergeKey = row.productName;
+      const mergeKey = `${row.yearMonth}__${row.productName}`;
       const existing = mergedMap.get(mergeKey);
       if (existing) {
         existing.stock += row.stock;
@@ -420,6 +420,7 @@ export default function InventoryPage() {
     type ExportRow = Record<string, string | number>;
     const exportData: ExportRow[] = displayRows.map((r, i) => ({
       '序号': i + 1,
+      '月份': r.yearMonth,
       '商品编号': getSkuDisplayCode(r.sku),
       '商品名称': r.productName,
       '产品负责人': r.productOwner,
@@ -433,6 +434,7 @@ export default function InventoryPage() {
     // 总计行
     exportData.push({
       '序号': '',
+      '月份': '',
       '商品编号': '',
       '商品名称': '总计',
       '产品负责人': '所有',
@@ -623,6 +625,7 @@ export default function InventoryPage() {
           <TableHeader>
             <TableRow className="bg-slate-50">
               <TableHead className="text-center w-[50px]">序号</TableHead>
+              <TableHead className="text-center w-[80px]">月份</TableHead>
               <TableHead
                 className="cursor-pointer select-none text-center"
                 onClick={() => handleSort('skuCode')}
@@ -672,7 +675,7 @@ export default function InventoryPage() {
           <TableBody>
             {displayRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-24 text-center text-slate-400">
+                <TableCell colSpan={11} className="h-24 text-center text-slate-400">
                   暂无库存数据，请先导入库存表格
                 </TableCell>
               </TableRow>
@@ -681,6 +684,7 @@ export default function InventoryPage() {
                 {displayRows.map((row, idx) => (
                   <TableRow key={row.recordIds.join(',')}>
                     <TableCell className="text-center text-slate-400 text-sm">{idx + 1}</TableCell>
+                    <TableCell className="text-center text-slate-500 text-sm">{row.yearMonth}</TableCell>
                     <TableCell className="text-center text-slate-500 text-sm font-mono">{getSkuDisplayCode(row.sku)}</TableCell>
                     <TableCell className="font-medium">{row.productName}</TableCell>
                     <TableCell className="text-slate-600">{row.productOwner}</TableCell>
@@ -752,6 +756,7 @@ export default function InventoryPage() {
                 ))}
                 {/* 总计行 */}
                 <TableRow className="bg-slate-100 font-bold">
+                  <TableCell />
                   <TableCell />
                   <TableCell className="text-center text-slate-500">-</TableCell>
                   <TableCell>总计</TableCell>
