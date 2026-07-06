@@ -644,12 +644,26 @@ export async function insertInventoryFile(
   fileMeta: { id: string; file_name: string; year_month: string },
   records: { sku: string; stock_qty: number; sales_status?: string; adjustment_plan?: string }[]
 ): Promise<boolean> {
-  const { error: fileError } = await supabase.from('inventory_files').insert(fileMeta);
+  // 1. Upsert 文件元数据（防止重复插入报错）
+  const { error: fileError } = await supabase
+    .from('inventory_files')
+    .upsert(fileMeta, { onConflict: 'id' });
   if (fileError) {
-    console.error('insertInventoryFile error:', fileError);
+    console.error('[DB] insertInventoryFile - file upsert error:', fileError);
     return false;
   }
 
+  // 2. 先删除该文件已有的记录（处理重新上传场景）
+  const { error: delError } = await supabase
+    .from('inventory_records')
+    .delete()
+    .eq('file_id', fileMeta.id);
+  if (delError) {
+    console.error('[DB] insertInventoryFile - delete old records error:', delError);
+    return false;
+  }
+
+  // 3. 分批插入新记录（使用普通 insert，避免 upsert 约束冲突）
   const rows = records.map(r => ({
     id: crypto.randomUUID(),
     file_id: fileMeta.id,
@@ -660,14 +674,11 @@ export async function insertInventoryFile(
     adjustment_plan: r.adjustment_plan || '',
   }));
 
-  for (let i = 0; i < rows.length; i += 500) {
-    const batch = rows.slice(i, i + 500);
-    const { error } = await supabase.from('inventory_records').upsert(batch, { 
-      onConflict: 'unique_sku_year_month',
-      ignoreDuplicates: false 
-    });
+  for (let i = 0; i < rows.length; i += 200) {
+    const batch = rows.slice(i, i + 200);
+    const { error } = await supabase.from('inventory_records').insert(batch);
     if (error) {
-      console.error('insertInventoryRecords batch error:', error);
+      console.error('[DB] insertInventoryFile - batch insert error:', JSON.stringify(error));
       return false;
     }
   }

@@ -226,7 +226,7 @@ interface AppState {
   calculateSkuSummaries: (platform: Platform) => SkuSummary[];
 
   // 库存查询
-  importInventory: (file: { fileName: string; yearMonth: string }, records: { sku: string; stockQty: number }[]) => void;
+  importInventory: (file: { fileName: string; yearMonth: string }, records: { sku: string; stockQty: number }[]) => Promise<boolean>;
   deleteInventoryFile: (fileId: string) => void;
   updateInventorySalesStatus: (recordId: string, salesStatus: InventoryRecord['salesStatus']) => void;
   batchUpdateInventorySalesStatus: (recordIds: string[], salesStatus: InventoryRecord['salesStatus']) => void;
@@ -1113,13 +1113,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
       stockQty: r.stockQty,
       yearMonth: file.yearMonth,
       salesStatus: (currentStatusMap.get(r.sku.toLowerCase()) || '') as '清货' | '系统判定' | '',
-      recordIds: [`${fileId}-${i}`],
       adjustmentPlan: currentPlanMap.get(r.sku.toLowerCase()) || '',
       createdAt: Date.now(),
     }));
 
+    let saveSuccess = false;
     try {
-      await dbOps.insertInventoryFile(
+      saveSuccess = await dbOps.insertInventoryFile(
         { id: invFile.id, file_name: invFile.fileName, year_month: invFile.yearMonth },
         records.map((r) => ({ 
           sku: r.sku, 
@@ -1128,14 +1128,20 @@ export const useAppStore = create<AppState>()((set, get) => ({
           adjustment_plan: currentPlanMap.get(r.sku.toLowerCase()) || ''
         }))
       );
+      if (!saveSuccess) {
+        console.error('[Store] 库存数据保存到数据库失败');
+      }
     } catch (e) {
-      console.error('保存库存数据失败:', e);
+      console.error('[Store] 保存库存数据异常:', e);
     }
 
+    // 无论 DB 是否成功，先更新本地状态（保证 UI 可用）
     set((s) => ({
       inventoryFiles: [invFile, ...s.inventoryFiles],
       inventoryRecords: [...invRecords, ...s.inventoryRecords],
     }));
+
+    return saveSuccess;
   },
 
   deleteInventoryFile: async (fileId) => {

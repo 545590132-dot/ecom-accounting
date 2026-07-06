@@ -403,7 +403,11 @@ export default function InventoryPage() {
   const handleImportConfirm = useCallback(async () => {
     if (!importYear || !importMonth || importData.length === 0) return;
     const yearMonth = `${importYear}-${importMonth.padStart(2, '0')}`;
-    await importInventory({ fileName: importFileName, yearMonth }, importData);
+    const success = await importInventory({ fileName: importFileName, yearMonth }, importData);
+    if (!success) {
+      // 保存失败时仍然关闭弹窗（本地状态已更新），但提示用户
+      alert('库存数据导入到云端失败，刷新页面后数据可能丢失，请检查网络后重试');
+    }
     setImportOpen(false);
     setImportData([]);
     setImportFileName('');
