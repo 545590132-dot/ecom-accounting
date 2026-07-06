@@ -642,7 +642,7 @@ export async function getInventoryRecords(): Promise<InventoryRecord[]> {
 /** 插入库存文件及其记录 */
 export async function insertInventoryFile(
   fileMeta: { id: string; file_name: string; year_month: string },
-  records: { sku: string; stock_qty: number; sales_status?: string }[]
+  records: { sku: string; stock_qty: number; sales_status?: string; adjustment_plan?: string }[]
 ): Promise<boolean> {
   const { error: fileError } = await supabase.from('inventory_files').insert(fileMeta);
   if (fileError) {
@@ -657,6 +657,7 @@ export async function insertInventoryFile(
     stock_qty: r.stock_qty,
     year_month: fileMeta.year_month,
     sales_status: r.sales_status || '',
+    adjustment_plan: r.adjustment_plan || '',
   }));
 
   for (let i = 0; i < rows.length; i += 500) {

@@ -1094,11 +1094,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
       createdAt: Date.now(),
     };
     
-    // 获取当前状态中已有的销售状态映射（SKU -> salesStatus）
+    // 获取当前状态中已有的销售状态和调整计划映射（SKU -> salesStatus/adjustmentPlan）
     const currentStatusMap = new Map<string, string>();
+    const currentPlanMap = new Map<string, string>();
     get().inventoryRecords.forEach((rec) => {
       if (rec.salesStatus && !currentStatusMap.has(rec.sku.toLowerCase())) {
         currentStatusMap.set(rec.sku.toLowerCase(), rec.salesStatus);
+      }
+      if (rec.adjustmentPlan && !currentPlanMap.has(rec.sku.toLowerCase())) {
+        currentPlanMap.set(rec.sku.toLowerCase(), rec.adjustmentPlan);
       }
     });
     
@@ -1110,14 +1114,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
       yearMonth: file.yearMonth,
       salesStatus: (currentStatusMap.get(r.sku.toLowerCase()) || '') as '清货' | '系统判定' | '',
       recordIds: [`${fileId}-${i}`],
-      adjustmentPlan: '',
+      adjustmentPlan: currentPlanMap.get(r.sku.toLowerCase()) || '',
       createdAt: Date.now(),
     }));
 
     try {
       await dbOps.insertInventoryFile(
         { id: invFile.id, file_name: invFile.fileName, year_month: invFile.yearMonth },
-        records.map((r) => ({ sku: r.sku, stock_qty: r.stockQty, sales_status: currentStatusMap.get(r.sku.toLowerCase()) || '' }))
+        records.map((r) => ({ 
+          sku: r.sku, 
+          stock_qty: r.stockQty, 
+          sales_status: currentStatusMap.get(r.sku.toLowerCase()) || '',
+          adjustment_plan: currentPlanMap.get(r.sku.toLowerCase()) || ''
+        }))
       );
     } catch (e) {
       console.error('保存库存数据失败:', e);
