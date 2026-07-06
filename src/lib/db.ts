@@ -662,7 +662,10 @@ export async function insertInventoryFile(
 
   for (let i = 0; i < rows.length; i += 500) {
     const batch = rows.slice(i, i + 500);
-    const { error } = await supabase.from('inventory_records').insert(batch);
+    const { error } = await supabase.from('inventory_records').upsert(batch, { 
+      onConflict: 'sku,year_month',
+      ignoreDuplicates: false 
+    });
     if (error) console.error('insertInventoryRecords batch error:', error);
   }
   return true;
