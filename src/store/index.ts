@@ -1148,10 +1148,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
       console.error('[Store] 保存库存数据异常:', e);
     }
 
-    // 无论 DB 是否成功，先更新本地状态（保证 UI 可用）
+    // 更新本地状态：替换同月份的旧数据（与 DB 行为一致）
     set((s) => ({
-      inventoryFiles: [invFile, ...s.inventoryFiles],
-      inventoryRecords: [...invRecords, ...s.inventoryRecords],
+      inventoryFiles: [invFile, ...s.inventoryFiles.filter(f => f.yearMonth !== invFile.yearMonth)],
+      inventoryRecords: [...invRecords, ...s.inventoryRecords.filter(r => r.yearMonth !== file.yearMonth)],
     }));
 
     return saveSuccess;

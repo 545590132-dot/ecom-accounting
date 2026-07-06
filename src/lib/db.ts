@@ -653,17 +653,24 @@ export async function insertInventoryFile(
     return false;
   }
 
-  // 2. 先删除该文件已有的记录（处理重新上传场景）
+  // 2. 删除该月份的所有旧记录（按 year_month 删除，防止唯一约束冲突）
   const { error: delError } = await supabase
     .from('inventory_records')
     .delete()
-    .eq('file_id', fileMeta.id);
+    .eq('year_month', fileMeta.year_month);
   if (delError) {
     console.error('[DB] insertInventoryFile - delete old records error:', delError);
     return false;
   }
 
-  // 3. 分批插入新记录（使用普通 insert，避免 upsert 约束冲突）
+  // 3. 清理该月份的旧文件元数据（排除当前文件）
+  await supabase
+    .from('inventory_files')
+    .delete()
+    .eq('year_month', fileMeta.year_month)
+    .neq('id', fileMeta.id);
+
+  // 4. 分批插入新记录
   const rows = records.map(r => ({
     id: crypto.randomUUID(),
     file_id: fileMeta.id,
