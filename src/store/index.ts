@@ -1148,11 +1148,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
       console.error('[Store] 保存库存数据异常:', e);
     }
 
-    // 更新本地状态：替换同月份的旧数据（与 DB 行为一致）
-    set((s) => ({
-      inventoryFiles: [invFile, ...s.inventoryFiles.filter(f => f.yearMonth !== invFile.yearMonth)],
-      inventoryRecords: [...invRecords, ...s.inventoryRecords.filter(r => r.yearMonth !== file.yearMonth)],
-    }));
+    if (saveSuccess) {
+      // 从 DB 重新加载库存数据，确保本地状态与数据库完全一致
+      const [freshFiles, freshRecords] = await Promise.all([
+        dbOps.getInventoryFiles(),
+        dbOps.getInventoryRecords(),
+      ]);
+      set({
+        inventoryFiles: freshFiles,
+        inventoryRecords: freshRecords,
+      });
+    } else {
+      // DB 保存失败时仍更新本地状态（但数据可能与 DB 不一致）
+      set((s) => ({
+        inventoryFiles: [invFile, ...s.inventoryFiles.filter(f => f.yearMonth !== invFile.yearMonth)],
+        inventoryRecords: [...invRecords, ...s.inventoryRecords.filter(r => r.yearMonth !== file.yearMonth)],
+      }));
+    }
 
     return saveSuccess;
   },
