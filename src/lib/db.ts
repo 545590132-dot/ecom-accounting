@@ -138,7 +138,9 @@ export async function getSkuMappings(platform: Platform): Promise<SkuMapping[]> 
 
 export async function upsertSkuMapping(mapping: SkuMapping): Promise<boolean> {
   return safeOp(async () => {
-    const { error } = await supabase.from('sku_mappings').upsert({
+    // 先删除同 SKU 的旧映射（防止重复）
+    await supabase.from('sku_mappings').delete().eq('sku', mapping.sku);
+    const { error } = await supabase.from('sku_mappings').insert({
       id: mapping.id,
       sku: mapping.sku,
       product_name: mapping.productName,
@@ -189,6 +191,15 @@ export async function deleteSkuMappingsByPlatform(platform: Platform): Promise<b
 export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<boolean> {
   if (mappings.length === 0) return true;
   return safeOp(async () => {
+    // 先删除已有的同 SKU 映射（防止重复）
+    const incomingSkus = mappings.map((m) => m.sku);
+    // 分批删除，每批 200 个 SKU
+    for (let i = 0; i < incomingSkus.length; i += 200) {
+      const batch = incomingSkus.slice(i, i + 200);
+      const { error: delErr } = await supabase.from('sku_mappings').delete().in('sku', batch);
+      if (delErr) { console.error('upsertSkuMappingsBatch delete error:', delErr); return false; }
+    }
+    // 再插入新映射
     const rows = mappings.map((m) => ({
       id: m.id,
       sku: m.sku,
@@ -198,16 +209,15 @@ export async function upsertSkuMappingsBatch(mappings: SkuMapping[]): Promise<bo
       category: m.category || '',
       product_owner: m.productOwner || '',
     }));
-    // 分批并行 upsert，每批 500
     const batches: typeof rows[] = [];
     for (let i = 0; i < rows.length; i += 500) {
       batches.push(rows.slice(i, i + 500));
     }
     const results = await Promise.all(
-      batches.map((batch) => supabase.from('sku_mappings').upsert(batch))
+      batches.map((batch) => supabase.from('sku_mappings').insert(batch))
     );
     const failed = results.find((r) => r.error);
-    if (failed?.error) { console.error('upsertSkuMappingsBatch error:', failed.error); return false; }
+    if (failed?.error) { console.error('upsertSkuMappingsBatch insert error:', failed.error); return false; }
     return true;
   }, false, 'upsertSkuMappingsBatch');
 }

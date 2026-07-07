@@ -463,9 +463,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ====== SKU 映射（全部同步返回，Supabase 写入后台队列执行） ======
   addSkuMapping: (mapping) => {
+    const normSku = mapping.sku.trim().toLowerCase().replace(/\s+/g, '');
     const id = generateId();
     const newMapping = { ...mapping, id };
-    set((s) => ({ skuMappings: [...s.skuMappings, newMapping] }));
+    // 如果同 SKU 已存在，先移除旧的（避免重复）
+    set((s) => ({
+      skuMappings: [
+        ...s.skuMappings.filter((m) => m.sku.trim().toLowerCase().replace(/\s+/g, '') !== normSku),
+        newMapping,
+      ],
+    }));
     syncToRemote('addSkuMapping', () => dbOps.upsertSkuMapping(newMapping));
   },
 
@@ -511,9 +518,20 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   importSkuMappings: (mappings) => {
-    const newMappings = mappings.map((m) => ({ ...m, id: generateId() }));
-    const newIds = new Set(newMappings.map((m) => m.id));
-    set((s) => ({ skuMappings: [...s.skuMappings, ...newMappings] }));
+    // 按规范化 SKU 去重（同一 SKU 只保留最后一条）
+    const deduped = new Map<string, Omit<SkuMapping, 'id'>>();
+    for (const m of mappings) {
+      deduped.set(m.sku.trim().toLowerCase().replace(/\s+/g, ''), m);
+    }
+    const newMappings = Array.from(deduped.values()).map((m) => ({ ...m, id: generateId() }));
+    const newSkuSet = new Set(newMappings.map((m) => m.sku.trim().toLowerCase().replace(/\s+/g, '')));
+    // 移除本地状态中已存在的同 SKU 映射，再追加新映射
+    set((s) => ({
+      skuMappings: [
+        ...s.skuMappings.filter((m) => !newSkuSet.has(m.sku.trim().toLowerCase().replace(/\s+/g, ''))),
+        ...newMappings,
+      ],
+    }));
     syncToRemote('importSkuMappings', () => dbOps.upsertSkuMappingsBatch(newMappings));
   },
 
