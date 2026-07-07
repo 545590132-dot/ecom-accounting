@@ -1094,18 +1094,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
       createdAt: Date.now(),
     };
 
-    // 按 SKU 去重并汇总库存（同一 SKU 在 Excel 中可能出现多次）
-    const skuAggregated = new Map<string, { sku: string; stockQty: number }>();
+    // 按 SKU 去重（同一 SKU 在 Excel 中可能出现多次，保留最后一条，与 DB upsert 行为一致）
+    const skuDeduped = new Map<string, { sku: string; stockQty: number }>();
     for (const r of records) {
       const key = r.sku.trim();
-      const existing = skuAggregated.get(key);
-      if (existing) {
-        existing.stockQty += r.stockQty;
-      } else {
-        skuAggregated.set(key, { sku: r.sku.trim(), stockQty: r.stockQty });
-      }
+      skuDeduped.set(key, { sku: r.sku.trim(), stockQty: r.stockQty });
     }
-    const aggregatedRecords = Array.from(skuAggregated.values());
+    const dedupedRecords = Array.from(skuDeduped.values());
     
     // 获取当前状态中已有的销售状态和调整计划映射（SKU -> salesStatus/adjustmentPlan）
     const currentStatusMap = new Map<string, string>();
@@ -1119,7 +1114,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       }
     });
     
-    const invRecords: InventoryRecord[] = aggregatedRecords.map((r, i) => ({
+    const invRecords: InventoryRecord[] = dedupedRecords.map((r, i) => ({
       id: `${fileId}-${i}`,
       fileId,
       sku: r.sku,
@@ -1134,7 +1129,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     try {
       saveSuccess = await dbOps.insertInventoryFile(
         { id: invFile.id, file_name: invFile.fileName, year_month: invFile.yearMonth },
-        aggregatedRecords.map((r) => ({ 
+        dedupedRecords.map((r) => ({ 
           sku: r.sku, 
           stock_qty: r.stockQty, 
           sales_status: currentStatusMap.get(r.sku.toLowerCase()) || '',
