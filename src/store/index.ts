@@ -1120,17 +1120,32 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
     const dedupedRecords = Array.from(skuDeduped.values());
     
-    // 获取当前状态中已有的销售状态和调整计划映射（SKU -> salesStatus/adjustmentPlan）
+    // 从数据库查询历史销售状态和调整计划（确保即使本地状态没有加载也能继承）
     const currentStatusMap = new Map<string, string>();
     const currentPlanMap = new Map<string, string>();
-    get().inventoryRecords.forEach((rec) => {
-      if (rec.salesStatus && !currentStatusMap.has(rec.sku.toLowerCase())) {
-        currentStatusMap.set(rec.sku.toLowerCase(), rec.salesStatus);
-      }
-      if (rec.adjustmentPlan && !currentPlanMap.has(rec.sku.toLowerCase())) {
-        currentPlanMap.set(rec.sku.toLowerCase(), rec.adjustmentPlan);
-      }
-    });
+    try {
+      const existingRecords = await dbOps.getInventoryRecords();
+      existingRecords.forEach((rec) => {
+        const key = rec.sku.toLowerCase();
+        if (rec.salesStatus && !currentStatusMap.has(key)) {
+          currentStatusMap.set(key, rec.salesStatus);
+        }
+        if (rec.adjustmentPlan && !currentPlanMap.has(key)) {
+          currentPlanMap.set(key, rec.adjustmentPlan);
+        }
+      });
+      console.log(`[Store] 继承历史销售状态: ${currentStatusMap.size}个SKU有销售状态, ${currentPlanMap.size}个SKU有调整计划`);
+    } catch (e) {
+      console.warn('[Store] 查询历史销售状态失败，使用本地状态:', e);
+      get().inventoryRecords.forEach((rec) => {
+        if (rec.salesStatus && !currentStatusMap.has(rec.sku.toLowerCase())) {
+          currentStatusMap.set(rec.sku.toLowerCase(), rec.salesStatus);
+        }
+        if (rec.adjustmentPlan && !currentPlanMap.has(rec.sku.toLowerCase())) {
+          currentPlanMap.set(rec.sku.toLowerCase(), rec.adjustmentPlan);
+        }
+      });
+    }
     
     const invRecords: InventoryRecord[] = dedupedRecords.map((r, i) => ({
       id: `${fileId}-${i}`,
