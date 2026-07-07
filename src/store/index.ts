@@ -1177,16 +1177,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
 
     if (saveSuccess) {
-      // 从 DB 完全重新加载所有数据，确保本地状态与数据库 100% 一致
-      try {
-        await get().loadAllData();
-        const dbTotal = get().inventoryRecords.reduce((s, r) => s + r.stockQty, 0);
-        console.log(`[Store] loadAllData重载完成: ${get().inventoryRecords.length}条记录, 总库存=${dbTotal}`);
-      } catch (e) {
-        console.error('[Store] loadAllData重载失败:', e);
-      }
+      // 直接从导入数据构建精确的本地状态，不依赖 DB reload
+      const newMonths = new Set(invRecords.map((r) => r.yearMonth));
+      const currentRecords = get().inventoryRecords;
+      const otherMonthRecords = currentRecords.filter(
+        (r: InventoryRecord) => !newMonths.has(r.yearMonth),
+      );
+      set((s) => ({
+        inventoryRecords: [...invRecords, ...otherMonthRecords],
+        inventoryFiles: [
+          { id: fileId, fileName: file.fileName, yearMonth: file.yearMonth, createdAt: Date.now() },
+          ...s.inventoryFiles.filter((f) => !newMonths.has(f.yearMonth)),
+        ],
+      }));
+      console.log(`[Store] 导入完成: ${invRecords.length}条新记录, 总记录=${invRecords.length + otherMonthRecords.length}`);
     } else {
-      console.error('[Store] DB保存失败，本地状态可能与数据库不一致');
+      console.error('[Store] DB保存失败，本地状态未更新');
     }
 
     return saveSuccess;
