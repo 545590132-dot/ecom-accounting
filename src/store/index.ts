@@ -1177,33 +1177,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
 
     if (saveSuccess) {
-      // 从 DB 重新加载库存数据，确保本地状态与数据库一致
+      // 从 DB 完全重新加载所有数据，确保本地状态与数据库 100% 一致
       try {
-        const [freshRecords, freshFiles] = await Promise.all([
-          dbOps.getInventoryRecords(),
-          dbOps.getInventoryFiles(),
-        ]);
-        const dbTotal = freshRecords.reduce((s, r) => s + r.stockQty, 0);
-        console.log(`[Store] DB重载完成: ${freshRecords.length}条记录, 总库存=${dbTotal}`);
-        set((s) => ({
-          inventoryRecords: freshRecords,
-          inventoryFiles: freshFiles,
-        }));
+        await get().loadAllData();
+        const dbTotal = get().inventoryRecords.reduce((s, r) => s + r.stockQty, 0);
+        console.log(`[Store] loadAllData重载完成: ${get().inventoryRecords.length}条记录, 总库存=${dbTotal}`);
       } catch (e) {
-        console.error('[Store] 重载库存数据失败:', e);
-        // 兜底：用聚合数据更新本地状态
-        set((s) => ({
-          inventoryFiles: [invFile, ...s.inventoryFiles.filter(f => f.yearMonth !== invFile.yearMonth)],
-          inventoryRecords: [...invRecords, ...s.inventoryRecords.filter(r => r.yearMonth !== file.yearMonth)],
-        }));
+        console.error('[Store] loadAllData重载失败:', e);
       }
     } else {
-      // DB 保存失败，用聚合数据兜底更新本地状态
       console.error('[Store] DB保存失败，本地状态可能与数据库不一致');
-      set((s) => ({
-        inventoryFiles: [invFile, ...s.inventoryFiles.filter(f => f.yearMonth !== invFile.yearMonth)],
-        inventoryRecords: [...invRecords, ...s.inventoryRecords.filter(r => r.yearMonth !== file.yearMonth)],
-      }));
     }
 
     return saveSuccess;
