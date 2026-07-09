@@ -413,12 +413,25 @@ export const useAppStore = create<AppState>()((set, get) => ({
         inventoryFiles = invFilesResult;
         const invRecordsResult = await dbOps.getInventoryRecords();
         inventoryRecords = invRecordsResult;
+        // DEBUG: 库存数据加载校验
+        const monthTotals = new Map<string, { count: number; total: number }>();
+        for (const r of inventoryRecords) {
+          const mt = monthTotals.get(r.yearMonth) || { count: 0, total: 0 };
+          mt.count++;
+          mt.total += r.stockQty;
+          monthTotals.set(r.yearMonth, mt);
+        }
+        console.log(`[DB加载] 库存记录总数=${inventoryRecords.length}, 文件数=${inventoryFiles.length}`);
+        for (const [ym, mt] of monthTotals) {
+          console.log(`[DB加载] ${ym}: ${mt.count}条, 总库存=${mt.total}`);
+        }
       } catch (e) {
         console.warn('加载库存数据失败:', e);
         const existingFiles = get().inventoryFiles || [];
         const existingRecords = get().inventoryRecords || [];
         if (existingFiles.length > 0) inventoryFiles = existingFiles;
         if (existingRecords.length > 0) inventoryRecords = existingRecords;
+        console.warn(`[DB加载失败] 使用内存缓存: ${inventoryRecords.length}条记录`);
       }
 
       // 加载计算器配置

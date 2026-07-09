@@ -218,6 +218,19 @@ export default function InventoryPage() {
       }
     }
 
+    // DEBUG: 分组后校验
+    console.log(`[显示] inventoryRecords=${inventoryRecords.length}, grouped=${grouped.size}`);
+    const groupedMonthTotals = new Map<string, { count: number; total: number }>();
+    for (const [, v] of grouped) {
+      const mt = groupedMonthTotals.get(v.yearMonth) || { count: 0, total: 0 };
+      mt.count++;
+      mt.total += v.stockQty;
+      groupedMonthTotals.set(v.yearMonth, mt);
+    }
+    for (const [ym, mt] of groupedMonthTotals) {
+      console.log(`[显示] grouped ${ym}: ${mt.count}组, 总库存=${mt.total}`);
+    }
+
     const rows: DisplayRow[] = [];
     for (const [, v] of grouped) {
       const skuKey = v.sku.toLowerCase().replace(/\s/g, '');
@@ -340,6 +353,11 @@ export default function InventoryPage() {
     // 隐藏库存为0的商品
     const filtered = hideZeroStock ? mergedRows.filter(r => r.stock > 0) : mergedRows;
 
+    // DEBUG: 合并和筛选后校验
+    const mergedTotal = mergedRows.reduce((s, r) => s + r.stock, 0);
+    const filteredTotal = filtered.reduce((s, r) => s + r.stock, 0);
+    console.log(`[显示] mergedRows=${mergedRows.length}, total=${mergedTotal}, filtered=${filtered.length}, filteredTotal=${filteredTotal}, hideZeroStock=${hideZeroStock}, ymFilter=[${yearMonthFilter}]`);
+
     // 排序
     if (sortKey) {
       filtered.sort((a, b) => {
@@ -364,6 +382,15 @@ export default function InventoryPage() {
     const totalMonthlySales = displayRows.reduce((s, r) => s + r.monthlySales, 0);
     const totalGoodsValue = displayRows.reduce((s, r) => s + r.goodsValue, 0);
     const totalEstimatedMonths = totalMonthlySales > 0 ? totalStock / totalMonthlySales : null;
+    // DEBUG: 直接从inventoryRecords计算总库存（不经过显示管道），用于对比
+    const directTotal = inventoryRecords
+      .filter(r => yearMonthFilter.length === 0 || yearMonthFilter.includes(r.yearMonth))
+      .reduce((s, r) => s + r.stockQty, 0);
+    if (directTotal !== totalStock) {
+      console.error(`[数据不一致!] 直接计算=${directTotal}, 管道计算=${totalStock}, 差异=${directTotal - totalStock}`);
+    } else {
+      console.log(`[数据一致] 总库存=${totalStock}`);
+    }
     return { totalStock, totalMonthlySales, totalGoodsValue, totalEstimatedMonths };
   }, [displayRows]);
 

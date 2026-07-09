@@ -634,7 +634,9 @@ export async function getInventoryRecords(): Promise<InventoryRecord[]> {
   const all: InventoryRecord[] = [];
   let offset = 0;
   const batchSize = 1000;
+  let batchNum = 0;
   while (true) {
+    batchNum++;
     const { data, error } = await supabase
       .from('inventory_records')
       .select('*')
@@ -642,10 +644,13 @@ export async function getInventoryRecords(): Promise<InventoryRecord[]> {
       .range(offset, offset + batchSize - 1);
     if (error) throw new Error(`获取库存记录失败: ${error.message}`);
     if (!data || data.length === 0) break;
-    all.push(...data.map(mapRowToInventoryRecord));
+    const mapped = data.map(mapRowToInventoryRecord);
+    all.push(...mapped);
+    console.log(`[DB查询] 批次${batchNum}: offset=${offset}, 返回${data.length}条, 累计${all.length}条`);
     if (data.length < batchSize) break;
     offset += batchSize;
   }
+  console.log(`[DB查询] getInventoryRecords完成: 共${all.length}条`);
   return all;
 }
 
