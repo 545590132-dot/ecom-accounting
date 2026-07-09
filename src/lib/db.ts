@@ -631,24 +631,37 @@ export async function getInventoryFiles(): Promise<InventoryFile[]> {
 
 /** 获取所有库存记录 */
 export async function getInventoryRecords(): Promise<InventoryRecord[]> {
-  const all: InventoryRecord[] = [];
-  let offset = 0;
-  const batchSize = 1000;
-  let batchNum = 0;
-  while (true) {
-    batchNum++;
-    const { data, error } = await supabase
-      .from('inventory_records')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + batchSize - 1);
-    if (error) throw new Error(`获取库存记录失败: ${error.message}`);
-    if (!data || data.length === 0) break;
-    const mapped = data.map(mapRowToInventoryRecord);
-    all.push(...mapped);
-    console.log(`[DB查询] 批次${batchNum}: offset=${offset}, 返回${data.length}条, 累计${all.length}条`);
-    if (data.length < batchSize) break;
-    offset += batchSize;
+  // 先获取总数
+  const { count, error: countError } = await supabase
+    .from('inventory_records')
+    .select('*', { count: 'exact', head: true });
+  if (countError) throw new Error(`获取库存记录总数失败: ${countError.message}`);
+  console.log(`[DB查询] inventory_records总数: ${count}`);
+
+  // 使用count作为limit，一次性获取所有记录
+  const fetchLimit = Math.max((count || 0) + 100, 5000);
+  const { data, error } = await supabase
+    .from('inventory_records')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(fetchLimit);
+  if (error) throw new Error(`获取库存记录失败: ${error.message}`);
+  if (!data) return [];
+
+  console.log(`[DB查询] 实际返回${data.length}条 (limit=${fetchLimit})`);
+
+  const all = data.map(mapRowToInventoryRecord);
+
+  // 校验：按月统计
+  const monthCheck = new Map<string, { count: number; total: number }>();
+  for (const r of all) {
+    const mc = monthCheck.get(r.yearMonth) || { count: 0, total: 0 };
+    mc.count++;
+    mc.total += r.stockQty;
+    monthCheck.set(r.yearMonth, mc);
+  }
+  for (const [ym, mc] of monthCheck) {
+    console.log(`[DB查询校验] ${ym}: ${mc.count}条, 总库存=${mc.total}`);
   }
   console.log(`[DB查询] getInventoryRecords完成: 共${all.length}条`);
   return all;
