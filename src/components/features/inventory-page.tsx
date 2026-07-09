@@ -317,6 +317,19 @@ export default function InventoryPage() {
 
     // 转换为最终展示行，计算系统判定
     const mergedRows: DisplayRow[] = [];
+    // [DEBUG] 合并后统计
+    const mergedMonthlyTotals = new Map<string, { count: number; total: number }>();
+    for (const [, v] of mergedMap) {
+      const ym = v.yearMonth;
+      const mt = mergedMonthlyTotals.get(ym) || { count: 0, total: 0 };
+      mt.count++;
+      mt.total += v.stock;
+      mergedMonthlyTotals.set(ym, mt);
+    }
+    console.log(`[显示管道] 合并后: ${mergedMap.size}行`);
+    for (const [ym, mt] of mergedMonthlyTotals) {
+      console.log(`[显示管道] 合并后 ${ym}: ${mt.count}行, 总库存=${mt.total}`);
+    }
     for (const [, v] of mergedMap) {
       const estimatedMonths = v.monthlySales > 0 ? v.stock / v.monthlySales : null;
 
@@ -371,6 +384,20 @@ export default function InventoryPage() {
         const bv = b[sortKey] ?? -Infinity;
         return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number);
       });
+    }
+
+    // [DEBUG] 筛选后统计
+    const filteredTotals = new Map<string, { count: number; total: number }>();
+    for (const r of filtered) {
+      const ym = r.yearMonth;
+      const ft = filteredTotals.get(ym) || { count: 0, total: 0 };
+      ft.count++;
+      ft.total += r.stock;
+      filteredTotals.set(ym, ft);
+    }
+    console.log(`[显示管道] 筛选后: ${filtered.length}行`);
+    for (const [ym, ft] of filteredTotals) {
+      console.log(`[显示管道] 筛选后 ${ym}: ${ft.count}行, 总库存=${ft.total}`);
     }
 
     return filtered;
