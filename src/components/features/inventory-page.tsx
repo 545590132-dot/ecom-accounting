@@ -220,7 +220,7 @@ export default function InventoryPage() {
       }
     }
 
-    // 按 yearMonth + sku 分组，取最新文件的库存
+    // 按 yearMonth + sku 分组，累加同一SKU的库存（处理重复记录）
     const grouped = new Map<string, { sku: string; stockQty: number; yearMonth: string; salesStatus: InventoryRecord['salesStatus']; recordIds: string[]; adjustmentPlan: string }>();
     for (const r of inventoryRecords) {
       const groupKey = `${r.yearMonth}__${r.sku}`;
@@ -234,6 +234,17 @@ export default function InventoryPage() {
           recordIds: [r.id],
           adjustmentPlan: r.adjustmentPlan || '',
         });
+      } else {
+        // 同一(yearMonth, sku)有多条记录时，累加库存
+        existing.stockQty += r.stockQty;
+        existing.recordIds.push(r.id);
+        // 保留最新的销售情况（非默认值优先）
+        if (r.salesStatus) {
+          existing.salesStatus = r.salesStatus;
+        }
+        if (r.adjustmentPlan) {
+          existing.adjustmentPlan = r.adjustmentPlan;
+        }
       }
     }
 
