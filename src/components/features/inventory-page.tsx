@@ -201,6 +201,25 @@ export default function InventoryPage() {
       });
     }
 
+    // DEBUG: 分组前检查重复SKU
+    const skuCountByMonth = new Map<string, Map<string, number>>();
+    for (const r of inventoryRecords) {
+      const monthMap = skuCountByMonth.get(r.yearMonth) || new Map();
+      monthMap.set(r.sku, (monthMap.get(r.sku) || 0) + 1);
+      skuCountByMonth.set(r.yearMonth, monthMap);
+    }
+    for (const [ym, monthMap] of skuCountByMonth) {
+      const dupes: [string, number][] = [];
+      for (const [sku, cnt] of monthMap) {
+        if (cnt > 1) dupes.push([sku, cnt]);
+      }
+      if (dupes.length > 0) {
+        console.log(`[重复SKU] ${ym}: ${dupes.length}个SKU有重复`, dupes.slice(0, 10).map(d => `SKU="${d[0]}"(${d[1]}次)`));
+      } else {
+        console.log(`[重复SKU] ${ym}: 无重复, 共${monthMap.size}个SKU`);
+      }
+    }
+
     // 按 yearMonth + sku 分组，取最新文件的库存
     const grouped = new Map<string, { sku: string; stockQty: number; yearMonth: string; salesStatus: InventoryRecord['salesStatus']; recordIds: string[]; adjustmentPlan: string }>();
     for (const r of inventoryRecords) {
