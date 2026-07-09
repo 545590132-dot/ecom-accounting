@@ -629,28 +629,27 @@ export async function getInventoryFiles(): Promise<InventoryFile[]> {
   return (data || []).map(mapRowToInventoryFile);
 }
 
-/** 获取所有库存记录 */
+/** 获取所有库存记录（分页查询，确保获取全部数据） */
 export async function getInventoryRecords(): Promise<InventoryRecord[]> {
-  // 先获取总数
-  const { count, error: countError } = await supabase
-    .from('inventory_records')
-    .select('*', { count: 'exact', head: true });
-  if (countError) throw new Error(`获取库存记录总数失败: ${countError.message}`);
-  console.log(`[DB查询] inventory_records总数: ${count}`);
+  const all: InventoryRecord[] = [];
+  let offset = 0;
+  const batchSize = 1000;
 
-  // 使用count作为limit，一次性获取所有记录
-  const fetchLimit = Math.max((count || 0) + 100, 5000);
-  const { data, error } = await supabase
-    .from('inventory_records')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(fetchLimit);
-  if (error) throw new Error(`获取库存记录失败: ${error.message}`);
-  if (!data) return [];
+  while (true) {
+    const { data, error } = await supabase
+      .from('inventory_records')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + batchSize - 1);
 
-  console.log(`[DB查询] 实际返回${data.length}条 (limit=${fetchLimit})`);
+    if (error) throw new Error(`获取库存记录失败: ${error.message}`);
+    if (!data || data.length === 0) break;
 
-  const all = data.map(mapRowToInventoryRecord);
+    all.push(...data.map(mapRowToInventoryRecord));
+
+    if (data.length < batchSize) break;
+    offset += batchSize;
+  }
 
   // 校验：按月统计
   const monthCheck = new Map<string, { count: number; total: number }>();
@@ -660,10 +659,8 @@ export async function getInventoryRecords(): Promise<InventoryRecord[]> {
     mc.total += r.stockQty;
     monthCheck.set(r.yearMonth, mc);
   }
-  for (const [ym, mc] of monthCheck) {
-    console.log(`[DB查询校验] ${ym}: ${mc.count}条, 总库存=${mc.total}`);
-  }
-  console.log(`[DB查询] getInventoryRecords完成: 共${all.length}条`);
+  console.log('[DB加载] inventoryRecords加载完成:', Object.fromEntries(monthCheck));
+
   return all;
 }
 
