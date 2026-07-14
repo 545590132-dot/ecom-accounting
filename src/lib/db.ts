@@ -640,6 +640,7 @@ export async function getInventoryRecords(): Promise<InventoryRecord[]> {
       .from('inventory_records')
       .select('*')
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(offset, offset + batchSize - 1);
 
     if (error) throw new Error(`获取库存记录失败: ${error.message}`);
@@ -651,9 +652,24 @@ export async function getInventoryRecords(): Promise<InventoryRecord[]> {
     offset += batchSize;
   }
 
-  // 校验：按月统计
-  const monthCheck = new Map<string, { count: number; total: number }>();
+  // 去重：按 (sku, yearMonth) 保留最新记录（防止分页排序不稳定导致重复）
+  const seen = new Map<string, InventoryRecord>();
   for (const r of all) {
+    const key = `${r.yearMonth}__${r.sku}`;
+    const existing = seen.get(key);
+    if (!existing || r.createdAt > existing.createdAt) {
+      seen.set(key, r);
+    }
+  }
+  const deduped = Array.from(seen.values());
+
+  if (all.length !== deduped.length) {
+    console.warn(`[DB加载] 发现重复记录！原始=${all.length}, 去重后=${deduped.length}, 丢弃=${all.length - deduped.length}条`);
+  }
+
+  // 校验：按月统计（去重后）
+  const monthCheck = new Map<string, { count: number; total: number }>();
+  for (const r of deduped) {
     const mc = monthCheck.get(r.yearMonth) || { count: 0, total: 0 };
     mc.count++;
     mc.total += r.stockQty;
@@ -661,7 +677,7 @@ export async function getInventoryRecords(): Promise<InventoryRecord[]> {
   }
   console.log('[DB加载] inventoryRecords加载完成:', Object.fromEntries(monthCheck));
 
-  return all;
+  return deduped;
 }
 
 /** 插入库存文件及其记录 */
